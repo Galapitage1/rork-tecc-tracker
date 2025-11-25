@@ -2435,12 +2435,17 @@ export function StockProvider({ children, currentUser }: { children: ReactNode; 
       // CRITICAL: Always read fresh data from AsyncStorage to prevent race conditions
       // This ensures we don't lose data if sync is happening simultaneously
       const storedDeductions = await AsyncStorage.getItem(STORAGE_KEYS.SALES_DEDUCTIONS);
-      const currentSalesDeductions = storedDeductions ? JSON.parse(storedDeductions).filter((d: any) => !d.deleted) : [];
+      const currentSalesDeductions = storedDeductions ? JSON.parse(storedDeductions) : [];
       console.log('deductInventoryFromSales: Current sales deductions count (from storage):', currentSalesDeductions.length);
+      console.log('deductInventoryFromSales: Including deleted records in merge to preserve sync state');
       
       const existingDeduction = currentSalesDeductions.find(
         (d: SalesDeduction) => d.outletName === outletName && d.productId === productId && d.salesDate === salesDate && !d.deleted
       );
+      
+      console.log('deductInventoryFromSales: Checking for existing deduction...');
+      console.log('  Searching for - outlet:', outletName, 'productId:', productId, 'date:', salesDate);
+      console.log('  Found existing:', !!existingDeduction);
       
       if (existingDeduction) {
         console.log('deductInventoryFromSales: Found existing deduction record');
