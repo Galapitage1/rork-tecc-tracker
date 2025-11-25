@@ -17,7 +17,7 @@ import { useOrders } from '@/contexts/OrderContext';
 import { useStores } from '@/contexts/StoresContext';
 import { useProduction } from '@/contexts/ProductionContext';
 import { trpcClient } from '@/lib/trpc';
-import { syncData } from '@/utils/syncManager';
+import { syncData, overrideSyncData } from '@/utils/syncManager';
 import { useRecipes } from '@/contexts/RecipeContext';
 import { useProductUsage } from '@/contexts/ProductUsageContext';
 import { exportBinIds, importBinIds } from '@/utils/syncManager';
@@ -108,6 +108,7 @@ export default function SettingsScreen() {
   const [connectionStatus, setConnectionStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [syncProgress, setSyncProgress] = useState<string>('');
   const [isManuallySyncing, setIsManuallySyncing] = useState<boolean>(false);
+  const [isOverrideSyncing, setIsOverrideSyncing] = useState<boolean>(false);
 
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
 
@@ -425,6 +426,93 @@ export default function SettingsScreen() {
             </>
           )}
         </TouchableOpacity>
+
+        {isSuperAdmin && (
+          <TouchableOpacity
+            style={[styles.button, styles.dangerButton]}
+            onPress={() => {
+              openConfirm({
+                title: 'Over-ride Data to Server',
+                message:
+                  'This will forcefully sync ALL local data to the server, replacing or adding data that doesn\'t exist. Other devices will download this data on their next sync. This is useful when you have important data that needs to be on the server. Are you sure?',
+                destructive: true,
+                testID: 'confirm-override-sync',
+                onConfirm: async () => {
+                  if (!currentUser) {
+                    Alert.alert('Error', 'Please login to override sync.');
+                    return;
+                  }
+
+                  try {
+                    setIsOverrideSyncing(true);
+                    setSyncProgress('Starting override sync...');
+                    console.log('[OVERRIDE] Starting override sync for all data...');
+
+                    let successCount = 0;
+                    let failCount = 0;
+
+                    const dataToOverride: Array<{ key: string; data: any[] }> = [
+                      { key: 'products', data: products as any[] },
+                      { key: 'outlets', data: outlets as any[] },
+                      { key: 'users', data: users as any[] },
+                      { key: 'product_conversions', data: productConversions as any[] },
+                    ];
+
+                    for (let i = 0; i < dataToOverride.length; i++) {
+                      const { key, data } = dataToOverride[i];
+                      try {
+                        setSyncProgress(`Over-riding ${key}... (${i + 1}/${dataToOverride.length})`);
+                        console.log(`[OVERRIDE] Over-riding ${key} with ${data.length} items...`);
+                        await overrideSyncData(key, data as any, currentUser.id);
+                        successCount++;
+                        console.log(`[OVERRIDE] ✓ ${key} over-ride complete`);
+                        await new Promise(resolve => setTimeout(resolve, 200));
+                      } catch (e) {
+                        console.error(`[OVERRIDE] ✗ Over-ride failed for ${key}:`, e);
+                        failCount++;
+                      }
+                    }
+
+                    setSyncProgress('');
+
+                    if (failCount > 0) {
+                      Alert.alert(
+                        'Partial Success',
+                        `${successCount} out of ${dataToOverride.length} data types over-ridden successfully. Other devices will now download this data.`
+                      );
+                    } else {
+                      Alert.alert(
+                        'Success',
+                        'All local data has been over-ridden to the server. Other devices will now download this data on their next sync.'
+                      );
+                    }
+
+                    console.log('[OVERRIDE] Override sync complete - Success:', successCount, 'Failed:', failCount);
+                  } catch (error) {
+                    console.error('[OVERRIDE] Override sync error:', error);
+                    Alert.alert('Error', 'Failed to override data. Please try again.');
+                    setSyncProgress('');
+                  } finally {
+                    setIsOverrideSyncing(false);
+                  }
+                },
+              });
+            }}
+            disabled={isOverrideSyncing || isSyncing || !hasPermission(currentUser?.role, 'enableSync')}
+          >
+            {isOverrideSyncing ? (
+              <>
+                <ActivityIndicator color={Colors.light.card} />
+                {syncProgress && <Text style={styles.buttonText}>{syncProgress}</Text>}
+              </>
+            ) : (
+              <>
+                <Upload size={20} color={Colors.light.card} />
+                <Text style={styles.buttonText}>Over-ride Data</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* User Data Section */}

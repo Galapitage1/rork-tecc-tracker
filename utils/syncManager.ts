@@ -463,6 +463,186 @@ export async function exportBinIds(): Promise<Record<string, string>> {
   }
 }
 
+export async function overrideSyncData<T extends { id: string; updatedAt?: number }>(
+  endpoint: string,
+  localData: T[],
+  userId?: string
+): Promise<T[]> {
+  console.log(`[OVERRIDE SYNC] ${endpoint}: Starting override sync - forcing local data to server...`);
+  
+  if (!localData || !Array.isArray(localData)) {
+    console.error(`[OVERRIDE SYNC] ${endpoint}: Invalid local data`);
+    return [];
+  }
+
+  if (FILE_SYNC_BASE) {
+    try {
+      console.log(`[OVERRIDE SYNC] ${endpoint}: Fetching current server data...`);
+      const url = FILE_SYNC_BASE.replace(/\/$/, '') + `/get.php?endpoint=${encodeURIComponent(endpoint)}`;
+      const getRes = await fetch(url);
+      
+      let remoteData: T[] = [];
+      if (getRes.ok) {
+        const responseText = await getRes.text();
+        try {
+          const parsed = JSON.parse(responseText);
+          remoteData = Array.isArray(parsed) ? parsed : [];
+          console.log(`[OVERRIDE SYNC] ${endpoint}: Server has ${remoteData.length} items`);
+        } catch {
+          console.error(`[OVERRIDE SYNC] ${endpoint}: Invalid JSON from server`);
+          remoteData = [];
+        }
+      }
+      
+      console.log(`[OVERRIDE SYNC] ${endpoint}: Merging local data into server data...`);
+      const remoteMap = new Map<string, T>();
+      remoteData.forEach(item => remoteMap.set(item.id, item));
+      
+      const currentDeviceId = await getDeviceId();
+      localData.forEach(item => {
+        remoteMap.set(item.id, {
+          ...item,
+          updatedAt: Date.now(),
+          deviceId: currentDeviceId,
+        } as T);
+      });
+      
+      const mergedData = Array.from(remoteMap.values()).filter((item: any) => !item.deleted);
+      console.log(`[OVERRIDE SYNC] ${endpoint}: Override merged result: ${mergedData.length} items`);
+      
+      console.log(`[OVERRIDE SYNC] ${endpoint}: Uploading to server...`);
+      const cleaned = cleanDataForSync(mergedData);
+      const syncUrl = FILE_SYNC_BASE.replace(/\/$/, '') + `/sync.php?endpoint=${encodeURIComponent(endpoint)}`;
+      const res = await fetch(syncUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cleaned),
+      });
+      
+      if (!res.ok) {
+        console.error(`[OVERRIDE SYNC] ${endpoint}: Upload failed ${res.status}`);
+        return mergedData as T[];
+      }
+      
+      console.log(`[OVERRIDE SYNC] ${endpoint}: Success - override complete`);
+      return mergedData as T[];
+    } catch (e) {
+      console.error(`[OVERRIDE SYNC] ${endpoint}: Error`, e);
+      return localData;
+    }
+  }
+
+  if (!SYNC_KEY) {
+    console.log(`[OVERRIDE SYNC] ${endpoint}: No JSONBIN key configured`);
+    return localData;
+  }
+
+  try {
+    let binId: string | null = await getBinId(endpoint);
+    
+    let remoteData: T[] = [];
+    if (binId) {
+      console.log(`[OVERRIDE SYNC] ${endpoint}: Fetching from server...`);
+      try {
+        const getResponse = await fetch(`${JSONBIN_BASE_URL}/${binId}/latest`, {
+          headers: {
+            'X-Master-Key': SYNC_KEY,
+          },
+        });
+        
+        if (getResponse.ok) {
+          const responseText = await getResponse.text();
+          try {
+            const getResult = JSON.parse(responseText);
+            if (getResult.record) {
+              if (Array.isArray(getResult.record)) {
+                remoteData = getResult.record;
+              } else if (typeof getResult.record === 'string') {
+                try {
+                  const parsed = JSON.parse(getResult.record);
+                  remoteData = Array.isArray(parsed) ? parsed : [];
+                } catch {
+                  remoteData = [];
+                }
+              }
+            }
+            console.log(`[OVERRIDE SYNC] ${endpoint}: Server has ${remoteData.length} items`);
+          } catch {
+            console.error(`[OVERRIDE SYNC] ${endpoint}: Failed to parse server response`);
+          }
+        }
+      } catch (fetchError) {
+        console.error(`[OVERRIDE SYNC] ${endpoint}: Error fetching from server:`, fetchError);
+      }
+    }
+    
+    console.log(`[OVERRIDE SYNC] ${endpoint}: Merging local data into server data...`);
+    const remoteMap = new Map<string, T>();
+    remoteData.forEach(item => remoteMap.set(item.id, item));
+    
+    const currentDeviceId = await getDeviceId();
+    localData.forEach(item => {
+      remoteMap.set(item.id, {
+        ...item,
+        updatedAt: Date.now(),
+        deviceId: currentDeviceId,
+      } as T);
+    });
+    
+    const mergedData = Array.from(remoteMap.values()).filter((item: any) => !item.deleted);
+    console.log(`[OVERRIDE SYNC] ${endpoint}: Override merged result: ${mergedData.length} items`);
+    
+    const cleanedData = cleanDataForSync(mergedData);
+    
+    if (!binId) {
+      console.log(`[OVERRIDE SYNC] ${endpoint}: Creating new bin...`);
+      const createResponse = await fetch(JSONBIN_BASE_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Master-Key': SYNC_KEY,
+        },
+        body: JSON.stringify(cleanedData),
+      });
+      
+      if (createResponse.ok) {
+        const createResult = await createResponse.json();
+        const newBinId: string = createResult.metadata.id;
+        if (newBinId && typeof newBinId === 'string') {
+          binId = newBinId;
+          await setBinId(endpoint, newBinId);
+          console.log(`[OVERRIDE SYNC] ${endpoint}: Created bin ${binId}`);
+        }
+      } else {
+        console.log(`[OVERRIDE SYNC] ${endpoint}: Failed to create bin`);
+        return cleanedData as T[];
+      }
+    } else {
+      console.log(`[OVERRIDE SYNC] ${endpoint}: Uploading to bin...`);
+      const updateResponse = await fetch(`${JSONBIN_BASE_URL}/${binId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Master-Key': SYNC_KEY,
+        },
+        body: JSON.stringify(cleanedData),
+      });
+      
+      if (!updateResponse.ok) {
+        console.error(`[OVERRIDE SYNC] ${endpoint}: Failed to update remote ${updateResponse.status}`);
+      } else {
+        console.log(`[OVERRIDE SYNC] ${endpoint}: Successfully uploaded ${cleanedData.length} items`);
+      }
+    }
+    
+    console.log(`[OVERRIDE SYNC] ${endpoint}: Success - override complete`);
+    return cleanedData as T[];
+  } catch (error) {
+    console.error(`[OVERRIDE SYNC] ${endpoint}: Failed`, error);
+    return localData;
+  }
+}
+
 export async function syncData<T extends { id: string; updatedAt?: number }>(
   endpoint: string,
   localData: T[],
