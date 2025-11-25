@@ -556,10 +556,8 @@ export async function overrideSyncData<T extends { id: string; updatedAt?: numbe
       console.error(`[OVERRIDE SYNC] ${endpoint}: Error`, e);
       return localData;
     }
-  }
-
-  if (!SYNC_KEY) {
-    console.log(`[OVERRIDE SYNC] ${endpoint}: No JSONBIN key configured`);
+  } else if (!SYNC_KEY) {
+    console.log(`[OVERRIDE SYNC] ${endpoint}: No sync configured - neither FILE_SYNC_URL nor JSONBIN key`);
     return localData;
   }
 
