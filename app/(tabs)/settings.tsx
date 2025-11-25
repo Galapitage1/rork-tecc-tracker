@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Platform, TextInput, Modal, Image, Switch, Clipboard as RNClipboard } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Platform, TextInput, Modal, Image, Switch, Clipboard as RNClipboard, Linking } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { useState, useEffect } from 'react';
@@ -6,7 +6,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as ImagePicker from 'expo-image-picker';
-import { Upload, Trash2, Settings as SettingsIcon, FileSpreadsheet, Store, Plus, Edit2, X, Package, LogOut, Users as UsersIcon, Camera, ImageIcon, RefreshCw, CloudOff, Cloud, Share2, Link, Pause, Play, ChevronDown, ChevronUp, Mail, Save, Check, Download } from 'lucide-react-native';
+import { Upload, Trash2, Settings as SettingsIcon, FileSpreadsheet, Store, Plus, Edit2, X, Package, LogOut, Users as UsersIcon, Camera, ImageIcon, RefreshCw, CloudOff, Cloud, Share2, Link, Pause, Play, ChevronDown, ChevronUp, Mail, Save, Check, Download, Eye, Database } from 'lucide-react-native';
 import { useStock } from '@/contexts/StockContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useActivityLog } from '@/contexts/ActivityLogContext';
@@ -109,6 +109,7 @@ export default function SettingsScreen() {
   const [syncProgress, setSyncProgress] = useState<string>('');
   const [isManuallySyncing, setIsManuallySyncing] = useState<boolean>(false);
   const [isOverrideSyncing, setIsOverrideSyncing] = useState<boolean>(false);
+  const [isCheckingServer, setIsCheckingServer] = useState<boolean>(false);
 
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
 
@@ -428,7 +429,8 @@ export default function SettingsScreen() {
         </TouchableOpacity>
 
         {isSuperAdmin && (
-          <TouchableOpacity
+          <>
+            <TouchableOpacity
             style={[styles.button, styles.dangerButton]}
             onPress={() => {
               openConfirm({
@@ -512,6 +514,91 @@ export default function SettingsScreen() {
               </>
             )}
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.button, styles.secondaryButton]}
+            onPress={async () => {
+              setIsCheckingServer(true);
+              try {
+                console.log('[CHECK SERVER] Checking server data...');
+                const FILE_SYNC_BASE = process.env.EXPO_PUBLIC_FILE_SYNC_URL || '';
+                
+                if (FILE_SYNC_BASE) {
+                  const endpoints = ['products', 'outlets', 'users', 'product_conversions'];
+                  let report = 'Server Data:\n\n';
+                  
+                  for (const endpoint of endpoints) {
+                    try {
+                      const url = FILE_SYNC_BASE.replace(/\/$/, '') + `/get.php?endpoint=${encodeURIComponent(endpoint)}`;
+                      console.log(`[CHECK SERVER] Fetching ${endpoint} from:`, url);
+                      const res = await fetch(url);
+                      
+                      if (res.ok) {
+                        const responseText = await res.text();
+                        try {
+                          const data = JSON.parse(responseText);
+                          const count = Array.isArray(data) ? data.length : 0;
+                          report += `${endpoint}: ${count} items\n`;
+                          console.log(`[CHECK SERVER] ${endpoint}: ${count} items`);
+                          
+                          if (count > 0 && Array.isArray(data)) {
+                            const sample = data.slice(0, 2).map((item: any) => 
+                              `  - ${item.name || item.username || item.id || 'Unknown'}`
+                            ).join('\n');
+                            report += sample + '\n';
+                            if (count > 2) report += `  ... and ${count - 2} more\n`;
+                          }
+                          report += '\n';
+                        } catch (e) {
+                          report += `${endpoint}: Error parsing data\n\n`;
+                          console.error(`[CHECK SERVER] ${endpoint}: Parse error`, e);
+                        }
+                      } else {
+                        report += `${endpoint}: Server returned ${res.status}\n\n`;
+                        console.error(`[CHECK SERVER] ${endpoint}: Server error ${res.status}`);
+                      }
+                    } catch (e) {
+                      report += `${endpoint}: Connection failed\n\n`;
+                      console.error(`[CHECK SERVER] ${endpoint}: Error`, e);
+                    }
+                  }
+                  
+                  Alert.alert(
+                    'Server Data Check',
+                    report,
+                    [
+                      { text: 'Open Console', onPress: () => {
+                        console.log('\n=== SERVER DATA CHECK COMPLETE ===');
+                        console.log('Check the console above for detailed logs');
+                      }},
+                      { text: 'OK' }
+                    ]
+                  );
+                } else {
+                  Alert.alert('Error', 'File sync URL not configured');
+                }
+              } catch (error) {
+                console.error('[CHECK SERVER] Error:', error);
+                Alert.alert('Error', 'Failed to check server data');
+              } finally {
+                setIsCheckingServer(false);
+              }
+            }}
+            disabled={isCheckingServer || !hasPermission(currentUser?.role, 'enableSync')}
+          >
+            {isCheckingServer ? (
+              <>
+                <ActivityIndicator color={Colors.light.tint} />
+                <Text style={[styles.buttonText, styles.secondaryButtonText]}>Checking...</Text>
+              </>
+            ) : (
+              <>
+                <Eye size={20} color={Colors.light.tint} />
+                <Text style={[styles.buttonText, styles.secondaryButtonText]}>Check Server Data</Text>
+              </>
+            )}
+          </TouchableOpacity>
+          </>
         )}
       </View>
 

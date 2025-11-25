@@ -485,6 +485,8 @@ export async function overrideSyncData<T extends { id: string; updatedAt?: numbe
   userId?: string
 ): Promise<T[]> {
   console.log(`[OVERRIDE SYNC] ${endpoint}: Starting override sync - forcing local data to server...`);
+  console.log(`[OVERRIDE SYNC] ${endpoint}: Local data count: ${localData?.length || 0}`);
+  console.log(`[OVERRIDE SYNC] ${endpoint}: Local data sample:`, JSON.stringify(localData?.slice(0, 2), null, 2));
   
   if (!localData || !Array.isArray(localData)) {
     console.error(`[OVERRIDE SYNC] ${endpoint}: Invalid local data`);
@@ -528,6 +530,9 @@ export async function overrideSyncData<T extends { id: string; updatedAt?: numbe
       
       console.log(`[OVERRIDE SYNC] ${endpoint}: Uploading to server...`);
       const cleaned = cleanDataForSync(mergedData);
+      console.log(`[OVERRIDE SYNC] ${endpoint}: Data being uploaded count: ${cleaned.length}`);
+      console.log(`[OVERRIDE SYNC] ${endpoint}: Upload URL: ${FILE_SYNC_BASE.replace(/\/$/, '') + `/sync.php?endpoint=${encodeURIComponent(endpoint)}`}`);
+      
       const syncUrl = FILE_SYNC_BASE.replace(/\/$/, '') + `/sync.php?endpoint=${encodeURIComponent(endpoint)}`;
       const res = await fetch(syncUrl, {
         method: 'POST',
@@ -535,12 +540,17 @@ export async function overrideSyncData<T extends { id: string; updatedAt?: numbe
         body: JSON.stringify(cleaned),
       });
       
+      const responseText = await res.text();
+      console.log(`[OVERRIDE SYNC] ${endpoint}: Server response status: ${res.status}`);
+      console.log(`[OVERRIDE SYNC] ${endpoint}: Server response:`, responseText);
+      
       if (!res.ok) {
         console.error(`[OVERRIDE SYNC] ${endpoint}: Upload failed ${res.status}`);
+        console.error(`[OVERRIDE SYNC] ${endpoint}: Response body:`, responseText);
         return mergedData as T[];
       }
       
-      console.log(`[OVERRIDE SYNC] ${endpoint}: Success - override complete`);
+      console.log(`[OVERRIDE SYNC] ${endpoint}: ✓ SUCCESS - override complete. ${cleaned.length} items uploaded`);
       return mergedData as T[];
     } catch (e) {
       console.error(`[OVERRIDE SYNC] ${endpoint}: Error`, e);
@@ -644,14 +654,19 @@ export async function overrideSyncData<T extends { id: string; updatedAt?: numbe
         body: JSON.stringify(cleanedData),
       });
       
+      const responseText = await updateResponse.text();
+      console.log(`[OVERRIDE SYNC] ${endpoint}: JSONBIN response status: ${updateResponse.status}`);
+      console.log(`[OVERRIDE SYNC] ${endpoint}: JSONBIN response:`, responseText);
+      
       if (!updateResponse.ok) {
         console.error(`[OVERRIDE SYNC] ${endpoint}: Failed to update remote ${updateResponse.status}`);
+        console.error(`[OVERRIDE SYNC] ${endpoint}: Response body:`, responseText);
       } else {
-        console.log(`[OVERRIDE SYNC] ${endpoint}: Successfully uploaded ${cleanedData.length} items`);
+        console.log(`[OVERRIDE SYNC] ${endpoint}: ✓ Successfully uploaded ${cleanedData.length} items to JSONBIN`);
       }
     }
     
-    console.log(`[OVERRIDE SYNC] ${endpoint}: Success - override complete`);
+    console.log(`[OVERRIDE SYNC] ${endpoint}: ✓ SUCCESS - override complete. ${cleanedData.length} items uploaded`);
     return cleanedData as T[];
   } catch (error) {
     console.error(`[OVERRIDE SYNC] ${endpoint}: Failed`, error);
