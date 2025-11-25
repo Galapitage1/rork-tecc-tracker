@@ -310,15 +310,15 @@ export default function SettingsScreen() {
 
     try {
       setIsManuallySyncing(true);
-      console.log('[SETTINGS] Manual sync - Syncing all data from server immediately...');
+      console.log('[SETTINGS] Manual sync - Downloading and syncing all data from server...');
       setSyncProgress('Starting sync...');
       
       let successCount = 0;
       let failCount = 0;
       
       const syncOperations = [
-        { fn: () => syncAll(false), name: 'Stock Data' },
-        { fn: () => syncUsers(undefined, false), name: 'Users' },
+        { fn: () => syncAll(false, true), name: 'Stock Data' },
+        { fn: () => syncUsers(undefined, false, true), name: 'Users' },
         { fn: syncCustomers, name: 'Customers' },
         { fn: syncRecipes, name: 'Recipes' },
         { fn: syncOrders, name: 'Orders' },
@@ -327,13 +327,13 @@ export default function SettingsScreen() {
         { fn: syncMoirData, name: 'MOIR Data' },
       ];
       
-      console.log('[SETTINGS] Executing', syncOperations.length, 'sync operations...');
+      console.log('[SETTINGS] Executing', syncOperations.length, 'sync operations with forceDownload...');
       
       for (let i = 0; i < syncOperations.length; i++) {
         const { fn, name } = syncOperations[i];
         try {
           setSyncProgress(`Syncing ${name}... (${i + 1}/${syncOperations.length})`);
-          console.log(`[SETTINGS] Syncing ${name}...`);
+          console.log(`[SETTINGS] Syncing ${name} with forceDownload...`);
           await fn();
           successCount++;
           console.log(`[SETTINGS] ✓ ${name} synced successfully`);
@@ -349,10 +349,10 @@ export default function SettingsScreen() {
       if (failCount > 0) {
         Alert.alert(
           'Partial Success',
-          `${successCount} out of ${syncOperations.length} data types synced successfully.`
+          `${successCount} out of ${syncOperations.length} data types synced successfully. Local data has been overridden with server data where available.`
         );
       } else {
-        Alert.alert('Success', 'All data synced successfully from server.');
+        Alert.alert('Success', 'All data synced successfully from server. Local data has been overridden with server data.');
       }
       
       console.log('[SETTINGS] Manual sync complete - Success:', successCount, 'Failed:', failCount);

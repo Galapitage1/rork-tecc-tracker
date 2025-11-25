@@ -71,7 +71,7 @@ type StockContextType = {
   deleteAllRequests: () => Promise<void>;
   toggleShowProductList: (value: boolean) => Promise<void>;
   setViewMode: (mode: 'search' | 'button') => Promise<void>;
-  syncAll: (silent?: boolean) => Promise<void>;
+  syncAll: (silent?: boolean, forceDownload?: boolean) => Promise<void>;
 };
 
 const StockContext = createContext<StockContextType | null>(null);
@@ -2769,7 +2769,7 @@ export function StockProvider({ children, currentUser }: { children: ReactNode; 
     }
   }, [currentUser, inventoryStocks, stockChecks, outlets, salesDeductions]);
 
-  const syncAll = useCallback(async (silent: boolean = false) => {
+  const syncAll = useCallback(async (silent: boolean = false, forceDownload: boolean = false) => {
     if (!currentUser) {
       return;
     }
@@ -2852,14 +2852,14 @@ export function StockProvider({ children, currentUser }: { children: ReactNode; 
       console.log('StockContext syncAll: This is a', silent ? 'BACKGROUND' : 'MANUAL', 'sync - will', silent ? 'merge with server data preserving local data' : 'fetch from server and merge');
       
       const syncResults = await Promise.allSettled([
-        syncData('products', productsToSync, currentUser.id, { isDefaultAdminDevice: currentUser.username === 'admin' && currentUser.role === 'superadmin' }),
-        syncData('stockChecks', stockChecksToSync, currentUser.id),
-        syncData('requests', requestsToSync, currentUser.id),
-        syncData('outlets', outletsToSync, currentUser.id, { isDefaultAdminDevice: currentUser.username === 'admin' && currentUser.role === 'superadmin' }),
-        syncData('productConversions', conversionsToSync, currentUser.id),
-        syncData('inventoryStocks', inventoryToSync, currentUser.id),
-        syncData('salesDeductions', salesDeductionsToSync, currentUser.id),
-        syncData('reconcileHistory', reconcileHistoryToSync, currentUser.id),
+        syncData('products', productsToSync, currentUser.id, { isDefaultAdminDevice: currentUser.username === 'admin' && currentUser.role === 'superadmin', forceDownload }),
+        syncData('stockChecks', stockChecksToSync, currentUser.id, { forceDownload }),
+        syncData('requests', requestsToSync, currentUser.id, { forceDownload }),
+        syncData('outlets', outletsToSync, currentUser.id, { isDefaultAdminDevice: currentUser.username === 'admin' && currentUser.role === 'superadmin', forceDownload }),
+        syncData('productConversions', conversionsToSync, currentUser.id, { forceDownload }),
+        syncData('inventoryStocks', inventoryToSync, currentUser.id, { forceDownload }),
+        syncData('salesDeductions', salesDeductionsToSync, currentUser.id, { forceDownload }),
+        syncData('reconcileHistory', reconcileHistoryToSync, currentUser.id, { forceDownload }),
       ]);
       
       const syncedProducts = syncResults[0].status === 'fulfilled' ? syncResults[0].value : productsToSync;

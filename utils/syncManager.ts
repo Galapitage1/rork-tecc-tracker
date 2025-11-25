@@ -68,8 +68,16 @@ function cleanDataForSync<T>(data: T): T {
   }
 }
 
-export function mergeData<T extends { id: string; updatedAt?: number }>(local: T[], remote: T[]): T[] {
+export function mergeData<T extends { id: string; updatedAt?: number }>(local: T[], remote: T[], forceDownload: boolean = false): T[] {
   const merged = new Map<string, T>();
+  
+  // If forceDownload is true, remote data completely overrides local
+  if (forceDownload && remote.length > 0) {
+    console.log('[MERGE] Force download mode - using remote data only');
+    remote.forEach(item => merged.set(item.id, item));
+    const result = Array.from(merged.values());
+    return result.filter((item: any) => !item.deleted);
+  }
   
   // If remote is empty, use all local data
   if (remote.length === 0) {
@@ -105,7 +113,7 @@ export async function instantSync<T extends { id: string; updatedAt?: number }>(
   endpoint: string,
   localData: T[],
   userId?: string,
-  options?: { isDefaultAdminDevice?: boolean }
+  options?: { isDefaultAdminDevice?: boolean; forceDownload?: boolean }
 ): Promise<T[]> {
   console.log(`[INSTANT SYNC] ${endpoint}: Starting instant sync...`);
   
@@ -131,8 +139,12 @@ export async function instantSync<T extends { id: string; updatedAt?: number }>(
       }
       
       console.log(`[INSTANT SYNC] ${endpoint}: Step 2 - Merging ${localData.length} local with ${remoteData.length} remote items...`);
-      const merged = mergeData(localData, remoteData);
+      const forceDownload = options?.forceDownload === true;
+      const merged = mergeData(localData, remoteData, forceDownload);
       console.log(`[INSTANT SYNC] ${endpoint}: Merged result: ${merged.length} items`);
+      if (forceDownload && remoteData.length > 0) {
+        console.log(`[INSTANT SYNC] ${endpoint}: Force download mode - local data overridden with server data`);
+      }
       
       console.log(`[INSTANT SYNC] ${endpoint}: Step 3 - Uploading merged data to server...`);
       const currentDeviceId = await getDeviceId();
@@ -231,8 +243,12 @@ export async function instantSync<T extends { id: string; updatedAt?: number }>(
     
     // Step 2: Merge
     console.log(`[INSTANT SYNC] ${endpoint}: Step 2 - Merging ${localData.length} local with ${remoteData.length} remote items...`);
-    const merged = mergeData(localData, remoteData);
+    const forceDownload = options?.forceDownload === true;
+    const merged = mergeData(localData, remoteData, forceDownload);
     console.log(`[INSTANT SYNC] ${endpoint}: Merged result: ${merged.length} items`);
+    if (forceDownload && remoteData.length > 0) {
+      console.log(`[INSTANT SYNC] ${endpoint}: Force download mode - local data overridden with server data`);
+    }
     
     const currentDeviceId = await getDeviceId();
     const dataWithMetadata = merged.map(item => ({
@@ -647,7 +663,7 @@ export async function syncData<T extends { id: string; updatedAt?: number }>(
   endpoint: string,
   localData: T[],
   userId?: string,
-  options?: { isDefaultAdminDevice?: boolean }
+  options?: { isDefaultAdminDevice?: boolean; forceDownload?: boolean }
 ): Promise<T[]> {
   return instantSync(endpoint, localData, userId, options);
 }

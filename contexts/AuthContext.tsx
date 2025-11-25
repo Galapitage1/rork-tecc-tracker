@@ -224,7 +224,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     }
   }, []);
 
-  const syncUsers = useCallback(async (usersToSync?: User[], silent: boolean = false) => {
+  const syncUsers = useCallback(async (usersToSync?: User[], silent: boolean = false, forceDownload: boolean = false) => {
     if (!currentUser) {
       return;
     }
@@ -237,7 +237,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         setIsSyncing(true);
       }
       const dataToSync = usersToSync || users;
-      const synced = await syncData('users', dataToSync, currentUser.id, { isDefaultAdminDevice: currentUser.username === 'admin' && currentUser.role === 'superadmin' });
+      const synced = await syncData('users', dataToSync, currentUser.id, { isDefaultAdminDevice: currentUser.username === 'admin' && currentUser.role === 'superadmin', forceDownload });
       await AsyncStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(synced));
       setUsers((synced as any[]).filter(u => !u?.deleted));
       if (currentUser && synced.find((u: User) => u.id === currentUser.id)) {
