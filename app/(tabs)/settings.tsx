@@ -106,6 +106,8 @@ export default function SettingsScreen() {
   const [isSavingSettings, setIsSavingSettings] = useState<boolean>(false);
   const [isTestingEmail, setIsTestingEmail] = useState<boolean>(false);
   const [connectionStatus, setConnectionStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [syncProgress, setSyncProgress] = useState<string>('');
+  const [isManuallySyncing, setIsManuallySyncing] = useState<boolean>(false);
 
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
 
@@ -219,7 +221,7 @@ export default function SettingsScreen() {
     );
   }
 
-  const isSyncing = isStockSyncing || isUserSyncing || isCustomerSyncing || isRecipeSyncing || isOrderSyncing || isStoresSyncing || isProductionSyncing;
+  const isSyncing = isManuallySyncing || isStockSyncing || isUserSyncing || isCustomerSyncing || isRecipeSyncing || isOrderSyncing || isStoresSyncing || isProductionSyncing;
   const lastSyncTime = Math.max(stockLastSync || 0, userLastSync || 0, customerLastSync || 0, recipeLastSync || 0, orderLastSync || 0, storesLastSync || 0, productionLastSync || 0);
 
   const formatLastSync = (timestamp: number) => {
@@ -306,7 +308,9 @@ export default function SettingsScreen() {
     }
 
     try {
+      setIsManuallySyncing(true);
       console.log('[SETTINGS] Manual sync - Syncing all data from server immediately...');
+      setSyncProgress('Starting sync...');
       
       let successCount = 0;
       let failCount = 0;
@@ -324,19 +328,23 @@ export default function SettingsScreen() {
       
       console.log('[SETTINGS] Executing', syncOperations.length, 'sync operations...');
       
-      for (const { fn, name } of syncOperations) {
+      for (let i = 0; i < syncOperations.length; i++) {
+        const { fn, name } = syncOperations[i];
         try {
+          setSyncProgress(`Syncing ${name}... (${i + 1}/${syncOperations.length})`);
           console.log(`[SETTINGS] Syncing ${name}...`);
           await fn();
           successCount++;
           console.log(`[SETTINGS] ✓ ${name} synced successfully`);
-          await new Promise(resolve => requestAnimationFrame(() => resolve(undefined)));
+          await new Promise(resolve => setTimeout(resolve, 100));
         } catch (e) {
           console.error(`[SETTINGS] ✗ Sync failed for ${name}:`, e);
           failCount++;
         }
       }
 
+      setSyncProgress('');
+      
       if (failCount > 0) {
         Alert.alert(
           'Partial Success',
@@ -350,6 +358,9 @@ export default function SettingsScreen() {
     } catch (error) {
       console.error('[SETTINGS] Manual sync error:', error);
       Alert.alert('Sync Failed', 'Failed to sync data. Please check your internet connection and try again.');
+      setSyncProgress('');
+    } finally {
+      setIsManuallySyncing(false);
     }
   };
 
@@ -390,13 +401,23 @@ export default function SettingsScreen() {
           </Text>
         </View>
 
+        {syncProgress && (
+          <View style={styles.syncProgressCard}>
+            <ActivityIndicator size="small" color={Colors.light.tint} />
+            <Text style={styles.syncProgressText}>{syncProgress}</Text>
+          </View>
+        )}
+
         <TouchableOpacity
           style={[styles.button, styles.primaryButton]}
           onPress={handleManualSync}
           disabled={isSyncing || !hasPermission(currentUser?.role, 'enableSync')}
         >
           {isSyncing ? (
-            <ActivityIndicator color={Colors.light.card} />
+            <>
+              <ActivityIndicator color={Colors.light.card} />
+              {syncProgress && <Text style={styles.buttonText}>{syncProgress}</Text>}
+            </>
           ) : (
             <>
               <RefreshCw size={20} color={Colors.light.card} />
@@ -1325,5 +1346,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.light.muted,
     marginTop: 4,
+  },
+  syncProgressCard: {
+    backgroundColor: Colors.light.card,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Colors.light.tint,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 12,
+  },
+  syncProgressText: {
+    fontSize: 14,
+    color: Colors.light.tint,
+    fontWeight: '600' as const,
+    flex: 1,
   },
 });
