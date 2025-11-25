@@ -4,3 +4,7 @@
 
 # For production:
 EXPO_PUBLIC_RORK_API_BASE_URL=https://tracker.tecclk.com
+
+# File Sync URL - CRITICAL for data synchronization
+# This tells the app where to send your data (products, stock checks, orders, etc.)
+EXPO_PUBLIC_FILE_SYNC_URL=https://tracker.tecclk.com/Tracker/api
