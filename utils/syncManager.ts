@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const JSONBIN_BASE_URL = 'https://api.jsonbin.io/v3/b';
-const SYNC_KEY = process.env.EXPO_PUBLIC_JSONBIN_KEY || '';
+const SYNC_KEY = (typeof window !== 'undefined' ? (window as any).EXPO_PUBLIC_JSONBIN_KEY : undefined) || process.env.EXPO_PUBLIC_JSONBIN_KEY || '';
 const FILE_SYNC_BASE = (typeof window !== 'undefined' ? (window as any).EXPO_PUBLIC_FILE_SYNC_URL : undefined) || process.env.EXPO_PUBLIC_FILE_SYNC_URL || '';
 
 export const DEVICE_ID_KEY = '@device_id';
