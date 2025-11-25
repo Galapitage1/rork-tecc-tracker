@@ -1,0 +1,84 @@
+name: Build and Package App
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Create .env file from secrets
+        run: |
+          echo "EXPO_PUBLIC_FILE_SYNC_URL=${{ secrets.EXPO_PUBLIC_FILE_SYNC_URL }}" >> .env
+          echo "EXPO_PUBLIC_RORK_API_BASE_URL=${{ secrets.EXPO_PUBLIC_RORK_API_BASE_URL }}" >> .env
+          echo "EXPO_PUBLIC_JSONBIN_KEY=${{ secrets.EXPO_PUBLIC_JSONBIN_KEY }}" >> .env
+          echo "[BUILD] Environment variables configured"
+          
+      - name: Build web app
+        run: bun run export
+        env:
+          EXPO_PUBLIC_FILE_SYNC_URL: ${{ secrets.EXPO_PUBLIC_FILE_SYNC_URL }}
+          EXPO_PUBLIC_RORK_API_BASE_URL: ${{ secrets.EXPO_PUBLIC_RORK_API_BASE_URL }}
+          EXPO_PUBLIC_JSONBIN_KEY: ${{ secrets.EXPO_PUBLIC_JSONBIN_KEY }}
+
+      - name: Inject environment variables into build
+        run: |
+          cat > dist/env-config.js << EOF
+          window.EXPO_FILE_SYNC_URL = '${{ secrets.EXPO_PUBLIC_FILE_SYNC_URL }}';
+          window.EXPO_PUBLIC_RORK_API_BASE_URL = '${{ secrets.EXPO_PUBLIC_RORK_API_BASE_URL }}';
+          window.EXPO_PUBLIC_JSONBIN_KEY = '${{ secrets.EXPO_PUBLIC_JSONBIN_KEY }}';
+          console.log('[ENV CONFIG] Environment variables loaded from build');
+          EOF
+          
+          # Inject env-config.js into index.html
+          sed -i 's|</head>|<script src="/env-config.js"></script></head>|' dist/index.html
+          echo "[BUILD] Environment variables injected into index.html"
+
+      - name: Copy PHP sync files
+        run: |
+          mkdir -p dist/Tracker/api
+          mkdir -p dist/Tracker/data
+          cp public/Tracker/api/*.php dist/Tracker/api/
+          cp public/Tracker/api/.htaccess dist/Tracker/api/
+          cp public/Tracker/data/.htaccess dist/Tracker/data/
+          echo "Sync API files copied"
+
+      - name: Copy .htaccess for routing
+        run: |
+          cp .htaccess dist/.htaccess || cp htaccess dist/.htaccess || echo "No .htaccess found"
+
+      - name: Create deployment package
+        run: |
+          cd dist
+          zip -r ../deployment-package.zip .
+          cd ..
+          echo "Deployment package created: deployment-package.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: deployment-package
+          path: deployment-package.zip
+          retention-days: 30
+
+      - name: Build summary
+        run: |
+          echo "✅ Build complete!"
+          echo "📦 Download the deployment-package artifact from the Actions tab"
+          echo "🚀 Upload to your server at: /domains/tracker.tecclk.com/public_html/"
