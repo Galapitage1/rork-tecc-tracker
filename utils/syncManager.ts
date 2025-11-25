@@ -71,14 +71,30 @@ function cleanDataForSync<T>(data: T): T {
 export function mergeData<T extends { id: string; updatedAt?: number }>(local: T[], remote: T[]): T[] {
   const merged = new Map<string, T>();
   
-  local.forEach(item => merged.set(item.id, item));
-  
-  remote.forEach(item => {
-    const existing = merged.get(item.id);
-    if (!existing || (item.updatedAt || 0) > (existing.updatedAt || 0)) {
-      merged.set(item.id, item);
-    }
-  });
+  // If remote is empty, use all local data
+  if (remote.length === 0) {
+    console.log('[MERGE] Remote is empty, using all local data');
+    local.forEach(item => merged.set(item.id, item));
+  } else {
+    // Remote has data, merge by timestamp
+    console.log(`[MERGE] Merging ${local.length} local with ${remote.length} remote items`);
+    
+    // Start with local items
+    local.forEach(item => merged.set(item.id, item));
+    
+    // Add or update with remote items only if they're newer
+    remote.forEach(item => {
+      const existing = merged.get(item.id);
+      if (!existing) {
+        // New item from remote, add it
+        merged.set(item.id, item);
+      } else if ((item.updatedAt || 0) > (existing.updatedAt || 0)) {
+        // Remote item is newer, use it
+        merged.set(item.id, item);
+      }
+      // If local is newer, keep local (already in merged)
+    });
+  }
   
   // Filter out items marked as deleted during merge
   const result = Array.from(merged.values());
