@@ -295,7 +295,7 @@ export default function HomeScreen() {
               style={styles.logo}
               resizeMode="contain"
             />
-            <Text style={styles.title}>TRACKER</Text>
+            <Text style={styles.title}>WELCOME TO THE ENGLISH CAKE COMPANY</Text>
             <Text style={styles.subtitle}>Welcome, {currentUser?.username}</Text>
           </View>
 
@@ -353,10 +353,11 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   title: {
-    fontSize: 24,
+    fontSize: 16,
     fontWeight: '700' as const,
     color: Colors.light.text,
     marginBottom: 4,
+    textAlign: 'center' as const,
   },
   subtitle: {
     fontSize: 14,

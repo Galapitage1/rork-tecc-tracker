@@ -68,6 +68,7 @@ function LiveInventoryScreen() {
   }, []);
 
   const productInventoryHistory = useMemo((): ProductInventoryHistory[] => {
+    console.log('[LIVE INVENTORY] Recalculating inventory history at', new Date().toISOString());
     if (!selectedOutlet) return [];
 
     const dates = getDateRange(selectedDate, dateRange);
@@ -625,6 +626,9 @@ function LiveInventoryScreen() {
 
     return history.sort((a, b) => a.productName.localeCompare(b.productName));
   }, [selectedOutlet, selectedDate, dateRange, products, outlets, stockChecks, salesDeductions, productConversions, requests, getDateRange, approvedProductions]);
+
+  console.log('[LIVE INVENTORY] Current inventory history count:', productInventoryHistory.length);
+  console.log('[LIVE INVENTORY] Dependencies - stockChecks:', stockChecks.length, 'salesDeductions:', salesDeductions.length, 'requests:', requests.length);
 
   const handleExportDiscrepancies = async () => {
     try {
