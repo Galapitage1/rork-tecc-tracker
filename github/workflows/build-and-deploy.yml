@@ -43,9 +43,10 @@ jobs:
           zip -r ../tracker-app.zip .
           cd ..
       
-      - name: Upload deployment artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: deployment-package
-          path: tracker-app.zip
-          retention-days: 3
+      # Artifact upload disabled - building locally on iMac
+      # - name: Upload deployment artifact
+      #   uses: actions/upload-artifact@v3
+      #   with:
+      #     name: deployment-package
+      #     path: tracker-app.zip
+      #     retention-days: 3
