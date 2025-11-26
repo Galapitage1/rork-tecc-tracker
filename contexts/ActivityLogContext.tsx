@@ -2,7 +2,7 @@ import createContextHook from '@nkzw/create-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { ActivityLog, ActivityType } from '@/types';
-import { instantSync } from '@/utils/syncManager';
+import { syncWithServer } from '@/utils/trpcSyncManager';
 
 const STORAGE_KEY = '@stock_app_activity_logs';
 
@@ -143,14 +143,10 @@ export const [ActivityLogProvider, useActivityLog] = createContextHook(() => {
         setIsSyncing(true);
       }
       console.log('[ActivityLogContext] Starting sync...');
-      const synced = await instantSync<ActivityLog>('activity_logs', logs);
-      if (synced) {
-        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(synced));
-        setLogs(synced.filter(l => !l.deleted));
-        console.log('[ActivityLogContext] ✓ Sync complete');
-      } else {
-        console.log('[ActivityLogContext] Sync skipped - using local data');
-      }
+      const synced = await syncWithServer<ActivityLog>('activity_logs', logs);
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(synced));
+      setLogs(synced.filter(l => !l.deleted));
+      console.log('[ActivityLogContext] ✓ Sync complete');
     } catch (error) {
       console.error('[ActivityLogContext] syncLogs: Failed:', error);
       if (!silent) {

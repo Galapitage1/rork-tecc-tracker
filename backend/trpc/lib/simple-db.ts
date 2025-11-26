@@ -31,7 +31,8 @@ export async function writeCollection<T extends { id: string; updatedAt?: number
 ): Promise<void> {
   await ensureDbDir();
   const filePath = path.join(DB_DIR, `${collection}.json`);
-  await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
+  const jsonString = JSON.stringify(data);
+  await fs.writeFile(filePath, jsonString, 'utf-8');
 }
 
 export function mergeByTimestamp<T extends { id: string; updatedAt?: number; deleted?: boolean }>(

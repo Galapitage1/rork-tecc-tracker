@@ -48,8 +48,14 @@ export async function syncWithServer<T extends { id: string; updatedAt?: number 
     await setLastSyncTime(collection, result.syncTime);
     console.log(`[TRPC SYNC] ${collection}: ✓ No changes from server`);
     return localData;
-  } catch (error) {
+  } catch (error: any) {
     console.error(`[TRPC SYNC] ${collection}: Error`, error);
+    if (error?.data?.stack) {
+      console.error(`[TRPC SYNC] ${collection}: Stack:`, error.data.stack);
+    }
+    if (error?.shape) {
+      console.error(`[TRPC SYNC] ${collection}: Shape:`, error.shape);
+    }
     console.log(`[TRPC SYNC] ${collection}: Using local data only`);
     return localData;
   }
@@ -73,8 +79,14 @@ export async function fetchFromServer<T extends { id: string; updatedAt?: number
     await setLastSyncTime(collection, result.syncTime);
     
     return result.data as T[];
-  } catch (error) {
+  } catch (error: any) {
     console.error(`[TRPC SYNC] ${collection}: Error fetching`, error);
+    if (error?.data?.stack) {
+      console.error(`[TRPC SYNC] ${collection}: Stack:`, error.data.stack);
+    }
+    if (error?.shape) {
+      console.error(`[TRPC SYNC] ${collection}: Shape:`, error.shape);
+    }
     return [];
   }
 }
