@@ -880,13 +880,15 @@ export default function SettingsScreen() {
                               Alert.alert('Error', errors.join('\n'));
                               return;
                             }
-                            for (const outlet of parsedOutlets) {
+                            for (let i = 0; i < parsedOutlets.length; i++) {
+                              const outlet = parsedOutlets[i];
                               await addOutlet({
-                                id: `outlet-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                                id: `outlet-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${i}`,
                                 ...outlet,
                                 createdAt: Date.now(),
                                 updatedAt: Date.now(),
                               });
+                              await new Promise(resolve => setTimeout(resolve, 50));
                             }
                             Alert.alert('Success', `Imported ${parsedOutlets.length} outlets successfully`);
                           }
