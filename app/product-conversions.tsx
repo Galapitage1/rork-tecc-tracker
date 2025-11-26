@@ -708,10 +708,7 @@ export default function ProductConversionsScreen() {
               <View style={styles.conversionExample}>
                 <Text style={styles.conversionExampleTitle}>Example:</Text>
                 <Text style={styles.conversionExampleText}>
-                  If 1 Chocolate Cake (Whole) = 10 Chocolate Cake (Slice):
-                  {('\n')}• From Product: Chocolate Cake (Whole)
-                  {('\n')}• Conversion Factor: 10
-                  {('\n')}• To Product: Chocolate Cake (Slice)
+                  If 1 Chocolate Cake (Whole) = 10 Chocolate Cake (Slice):{`\n`}• From Product: Chocolate Cake (Whole){`\n`}• Conversion Factor: 10{`\n`}• To Product: Chocolate Cake (Slice)
                 </Text>
               </View>
             </ScrollView>
