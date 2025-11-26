@@ -1,8 +1,16 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const JSONBIN_BASE_URL = 'https://api.jsonbin.io/v3/b';
-const SYNC_KEY = (typeof window !== 'undefined' ? ((window as any).EXPO_PUBLIC_JSONBIN_KEY || (window as any).EXPO_JSONBIN_KEY) : undefined) || process.env.EXPO_PUBLIC_JSONBIN_KEY || '';
-const FILE_SYNC_BASE = (typeof window !== 'undefined' ? ((window as any).EXPO_PUBLIC_FILE_SYNC_URL || (window as any).EXPO_FILE_SYNC_URL) : undefined) || process.env.EXPO_PUBLIC_FILE_SYNC_URL || '';
+
+function getSyncKey(): string {
+  const key = (typeof window !== 'undefined' ? ((window as any).EXPO_PUBLIC_JSONBIN_KEY || (window as any).EXPO_JSONBIN_KEY) : undefined) || process.env.EXPO_PUBLIC_JSONBIN_KEY || '';
+  return key;
+}
+
+function getFileSyncBase(): string {
+  const base = (typeof window !== 'undefined' ? ((window as any).EXPO_PUBLIC_FILE_SYNC_URL || (window as any).EXPO_FILE_SYNC_URL) : undefined) || process.env.EXPO_PUBLIC_FILE_SYNC_URL || '';
+  return base;
+}
 
 export const DEVICE_ID_KEY = '@device_id';
 const BIN_ID_KEY = '@jsonbin_bin_id';
@@ -117,6 +125,9 @@ export async function instantSync<T extends { id: string; updatedAt?: number }>(
 ): Promise<T[]> {
   console.log(`[INSTANT SYNC] ${endpoint}: Starting instant sync...`);
   
+  const FILE_SYNC_BASE = getFileSyncBase();
+  const SYNC_KEY = getSyncKey();
+  
   if (FILE_SYNC_BASE) {
     try {
       console.log(`[INSTANT SYNC] ${endpoint}: Step 1 - Fetching from server...`);
@@ -185,7 +196,13 @@ export async function instantSync<T extends { id: string; updatedAt?: number }>(
   }
 
   if (!SYNC_KEY) {
-    console.log(`[INSTANT SYNC] ${endpoint}: No JSONBIN key configured`);
+    console.warn(`[INSTANT SYNC] ${endpoint}: Neither FILE_SYNC_URL nor JSONBIN key configured`);
+    console.log('[INSTANT SYNC] Current config:', {
+      FILE_SYNC_BASE_VALUE: FILE_SYNC_BASE,
+      SYNC_KEY_SET: !!SYNC_KEY,
+      PROCESS_ENV: process.env.EXPO_PUBLIC_FILE_SYNC_URL ? 'SET' : 'NOT SET',
+      WINDOW_ENV: typeof window !== 'undefined' ? ((window as any).EXPO_PUBLIC_FILE_SYNC_URL ? 'SET' : 'NOT SET') : 'N/A'
+    });
     return localData;
   }
 
@@ -326,6 +343,9 @@ export async function backgroundSync<T extends { id: string; updatedAt?: number 
   options?: { isDefaultAdminDevice?: boolean }
 ): Promise<T[] | null> {
   console.log(`[BACKGROUND SYNC] ${endpoint}: Starting...`);
+  
+  const FILE_SYNC_BASE = getFileSyncBase();
+  const SYNC_KEY = getSyncKey();
   
   if (!SYNC_KEY && !FILE_SYNC_BASE) {
     console.log(`[BACKGROUND SYNC] ${endpoint}: No sync configured`);
@@ -492,6 +512,9 @@ export async function overrideSyncData<T extends { id: string; updatedAt?: numbe
     console.error(`[OVERRIDE SYNC] ${endpoint}: Invalid local data`);
     return [];
   }
+
+  const FILE_SYNC_BASE = getFileSyncBase();
+  const SYNC_KEY = getSyncKey();
 
   if (FILE_SYNC_BASE) {
     try {
