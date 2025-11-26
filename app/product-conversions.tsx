@@ -199,12 +199,13 @@ export default function ProductConversionsScreen() {
 
   const handleImportConversions = async () => {
     try {
-      let base64Data: string = '';
+      let fileContent: string = '';
+      let fileType: 'excel' | 'json' = 'excel';
       
       if (Platform.OS === 'web') {
         const input = document.createElement('input');
         input.type = 'file';
-        input.accept = '.xlsx,.xls';
+        input.accept = '.xlsx,.xls,.json';
         
         await new Promise<void>((resolve, reject) => {
           input.onchange = async (e: any) => {
@@ -215,13 +216,20 @@ export default function ProductConversionsScreen() {
             }
 
             try {
-              const arrayBuffer = await file.arrayBuffer();
-              const bytes = new Uint8Array(arrayBuffer);
-              let binary = '';
-              for (let i = 0; i < bytes.byteLength; i++) {
-                binary += String.fromCharCode(bytes[i]);
+              fileType = file.name.toLowerCase().endsWith('.json') ? 'json' : 'excel';
+              
+              if (fileType === 'json') {
+                const text = await file.text();
+                fileContent = text;
+              } else {
+                const arrayBuffer = await file.arrayBuffer();
+                const bytes = new Uint8Array(arrayBuffer);
+                let binary = '';
+                for (let i = 0; i < bytes.byteLength; i++) {
+                  binary += String.fromCharCode(bytes[i]);
+                }
+                fileContent = btoa(binary);
               }
-              base64Data = btoa(binary);
               resolve();
             } catch (err) {
               reject(err);
@@ -231,7 +239,7 @@ export default function ProductConversionsScreen() {
         });
       } else {
         const result = await DocumentPicker.getDocumentAsync({
-          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          type: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/json'],
           copyToCacheDirectory: true,
         });
 
@@ -239,20 +247,64 @@ export default function ProductConversionsScreen() {
           return;
         }
 
-        base64Data = await FileSystem.readAsStringAsync(result.assets[0].uri, {
-          encoding: 'base64',
-        });
+        const fileName = result.assets[0].name || '';
+        fileType = fileName.toLowerCase().endsWith('.json') ? 'json' : 'excel';
+
+        if (fileType === 'json') {
+          fileContent = await FileSystem.readAsStringAsync(result.assets[0].uri, {
+            encoding: 'utf8',
+          });
+        } else {
+          fileContent = await FileSystem.readAsStringAsync(result.assets[0].uri, {
+            encoding: 'base64',
+          });
+        }
       }
 
-      if (!base64Data) {
+      if (!fileContent) {
         return;
       }
 
-      const { conversions: parsedConversions, errors: parseErrors } = parseConversionsExcel(
-        base64Data,
-        products,
-        productConversions
-      );
+      let parsedConversions: ProductConversion[] = [];
+      let parseErrors: string[] = [];
+
+      if (fileType === 'json') {
+        try {
+          const jsonData = JSON.parse(fileContent);
+          const conversionsArray = Array.isArray(jsonData) ? jsonData : [];
+          
+          for (const item of conversionsArray) {
+            if (!item.fromProductId || !item.toProductId || !item.conversionFactor) {
+              parseErrors.push(`Invalid conversion: missing required fields`);
+              continue;
+            }
+
+            const existingConversion = productConversions.find(c => 
+              c.fromProductId === item.fromProductId && c.toProductId === item.toProductId
+            );
+
+            if (existingConversion) {
+              continue;
+            }
+
+            const newConversion: ProductConversion = {
+              id: item.id || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              fromProductId: item.fromProductId,
+              toProductId: item.toProductId,
+              conversionFactor: Number(item.conversionFactor),
+              createdAt: item.createdAt || Date.now(),
+            };
+
+            parsedConversions.push(newConversion);
+          }
+        } catch (err) {
+          parseErrors.push(`Failed to parse JSON file: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        }
+      } else {
+        const result = parseConversionsExcel(fileContent, products, productConversions);
+        parsedConversions = result.conversions;
+        parseErrors = result.errors;
+      }
 
       if (parseErrors.length > 0) {
         console.warn('Parse errors:', parseErrors);
