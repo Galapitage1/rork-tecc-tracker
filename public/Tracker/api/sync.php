@@ -37,34 +37,20 @@ if (file_exists($filePath)) {
 }
 
 $byId = [];
+foreach ($existing as $item) {
+  if (is_array($item) && isset($item['id'])) { $byId[$item['id']] = $item; }
+}
 
-// If server has NO existing data, accept all incoming data
-if (empty($existing)) {
-  foreach ($payload as $item) {
-    if (!is_array($item) || !isset($item['id'])) { continue; }
-    $byId[$item['id']] = $item;
-  }
-} else {
-  // Server has existing data - merge by timestamp
-  foreach ($existing as $item) {
-    if (is_array($item) && isset($item['id'])) { $byId[$item['id']] = $item; }
-  }
-  
-  foreach ($payload as $item) {
-    if (!is_array($item) || !isset($item['id'])) { continue; }
-    $id = $item['id'];
-    $incomingUpdatedAt = isset($item['updatedAt']) && is_numeric($item['updatedAt']) ? intval($item['updatedAt']) : 0;
-    if (!isset($byId[$id])) {
-      // New item, add it
+foreach ($payload as $item) {
+  if (!is_array($item) || !isset($item['id'])) { continue; }
+  $id = $item['id'];
+  $incomingUpdatedAt = isset($item['updatedAt']) && is_numeric($item['updatedAt']) ? intval($item['updatedAt']) : 0;
+  if (!isset($byId[$id])) {
+    $byId[$id] = $item;
+  } else {
+    $existingUpdatedAt = isset($byId[$id]['updatedAt']) && is_numeric($byId[$id]['updatedAt']) ? intval($byId[$id]['updatedAt']) : 0;
+    if ($incomingUpdatedAt >= $existingUpdatedAt) {
       $byId[$id] = $item;
-    } else {
-      // Item exists, compare timestamps
-      $existingUpdatedAt = isset($byId[$id]['updatedAt']) && is_numeric($byId[$id]['updatedAt']) ? intval($byId[$id]['updatedAt']) : 0;
-      if ($incomingUpdatedAt > $existingUpdatedAt) {
-        // Incoming is newer, replace
-        $byId[$id] = $item;
-      }
-      // If existing is newer, keep existing (already in $byId)
     }
   }
 }

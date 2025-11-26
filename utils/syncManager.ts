@@ -1,16 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const JSONBIN_BASE_URL = 'https://api.jsonbin.io/v3/b';
-
-function getSyncKey(): string {
-  const key = (typeof window !== 'undefined' ? ((window as any).EXPO_PUBLIC_JSONBIN_KEY || (window as any).EXPO_JSONBIN_KEY) : undefined) || process.env.EXPO_PUBLIC_JSONBIN_KEY || '';
-  return key;
-}
-
-function getFileSyncBase(): string {
-  const base = (typeof window !== 'undefined' ? ((window as any).EXPO_PUBLIC_FILE_SYNC_URL || (window as any).EXPO_FILE_SYNC_URL) : undefined) || process.env.EXPO_PUBLIC_FILE_SYNC_URL || '';
-  return base;
-}
+const SYNC_KEY = process.env.EXPO_PUBLIC_JSONBIN_KEY || '';
+const FILE_SYNC_BASE = (typeof window !== 'undefined' ? (window as any).EXPO_FILE_SYNC_URL : undefined) || process.env.EXPO_PUBLIC_FILE_SYNC_URL || '';
 
 export const DEVICE_ID_KEY = '@device_id';
 const BIN_ID_KEY = '@jsonbin_bin_id';
@@ -76,41 +68,17 @@ function cleanDataForSync<T>(data: T): T {
   }
 }
 
-export function mergeData<T extends { id: string; updatedAt?: number }>(local: T[], remote: T[], forceDownload: boolean = false): T[] {
+export function mergeData<T extends { id: string; updatedAt?: number }>(local: T[], remote: T[]): T[] {
   const merged = new Map<string, T>();
   
-  // If forceDownload is true, remote data completely overrides local
-  if (forceDownload && remote.length > 0) {
-    console.log('[MERGE] Force download mode - using remote data only');
-    remote.forEach(item => merged.set(item.id, item));
-    const result = Array.from(merged.values());
-    return result.filter((item: any) => !item.deleted);
-  }
+  local.forEach(item => merged.set(item.id, item));
   
-  // If remote is empty, use all local data
-  if (remote.length === 0) {
-    console.log('[MERGE] Remote is empty, using all local data');
-    local.forEach(item => merged.set(item.id, item));
-  } else {
-    // Remote has data, merge by timestamp
-    console.log(`[MERGE] Merging ${local.length} local with ${remote.length} remote items`);
-    
-    // Start with local items
-    local.forEach(item => merged.set(item.id, item));
-    
-    // Add or update with remote items only if they're newer
-    remote.forEach(item => {
-      const existing = merged.get(item.id);
-      if (!existing) {
-        // New item from remote, add it
-        merged.set(item.id, item);
-      } else if ((item.updatedAt || 0) > (existing.updatedAt || 0)) {
-        // Remote item is newer, use it
-        merged.set(item.id, item);
-      }
-      // If local is newer, keep local (already in merged)
-    });
-  }
+  remote.forEach(item => {
+    const existing = merged.get(item.id);
+    if (!existing || (item.updatedAt || 0) > (existing.updatedAt || 0)) {
+      merged.set(item.id, item);
+    }
+  });
   
   // Filter out items marked as deleted during merge
   const result = Array.from(merged.values());
@@ -121,12 +89,9 @@ export async function instantSync<T extends { id: string; updatedAt?: number }>(
   endpoint: string,
   localData: T[],
   userId?: string,
-  options?: { isDefaultAdminDevice?: boolean; forceDownload?: boolean }
+  options?: { isDefaultAdminDevice?: boolean }
 ): Promise<T[]> {
   console.log(`[INSTANT SYNC] ${endpoint}: Starting instant sync...`);
-  
-  const FILE_SYNC_BASE = getFileSyncBase();
-  const SYNC_KEY = getSyncKey();
   
   if (FILE_SYNC_BASE) {
     try {
@@ -150,12 +115,8 @@ export async function instantSync<T extends { id: string; updatedAt?: number }>(
       }
       
       console.log(`[INSTANT SYNC] ${endpoint}: Step 2 - Merging ${localData.length} local with ${remoteData.length} remote items...`);
-      const forceDownload = options?.forceDownload === true;
-      const merged = mergeData(localData, remoteData, forceDownload);
+      const merged = mergeData(localData, remoteData);
       console.log(`[INSTANT SYNC] ${endpoint}: Merged result: ${merged.length} items`);
-      if (forceDownload && remoteData.length > 0) {
-        console.log(`[INSTANT SYNC] ${endpoint}: Force download mode - local data overridden with server data`);
-      }
       
       console.log(`[INSTANT SYNC] ${endpoint}: Step 3 - Uploading merged data to server...`);
       const currentDeviceId = await getDeviceId();
@@ -196,7 +157,7 @@ export async function instantSync<T extends { id: string; updatedAt?: number }>(
   }
 
   if (!SYNC_KEY) {
-    console.log(`[INSTANT SYNC] ${endpoint}: JSONBIN not configured - using local data only`);
+    console.log(`[INSTANT SYNC] ${endpoint}: No JSONBIN key configured`);
     return localData;
   }
 
@@ -254,12 +215,8 @@ export async function instantSync<T extends { id: string; updatedAt?: number }>(
     
     // Step 2: Merge
     console.log(`[INSTANT SYNC] ${endpoint}: Step 2 - Merging ${localData.length} local with ${remoteData.length} remote items...`);
-    const forceDownload = options?.forceDownload === true;
-    const merged = mergeData(localData, remoteData, forceDownload);
+    const merged = mergeData(localData, remoteData);
     console.log(`[INSTANT SYNC] ${endpoint}: Merged result: ${merged.length} items`);
-    if (forceDownload && remoteData.length > 0) {
-      console.log(`[INSTANT SYNC] ${endpoint}: Force download mode - local data overridden with server data`);
-    }
     
     const currentDeviceId = await getDeviceId();
     const dataWithMetadata = merged.map(item => ({
@@ -337,9 +294,6 @@ export async function backgroundSync<T extends { id: string; updatedAt?: number 
   options?: { isDefaultAdminDevice?: boolean }
 ): Promise<T[] | null> {
   console.log(`[BACKGROUND SYNC] ${endpoint}: Starting...`);
-  
-  const FILE_SYNC_BASE = getFileSyncBase();
-  const SYNC_KEY = getSyncKey();
   
   if (!SYNC_KEY && !FILE_SYNC_BASE) {
     console.log(`[BACKGROUND SYNC] ${endpoint}: No sync configured`);
@@ -493,207 +447,11 @@ export async function exportBinIds(): Promise<Record<string, string>> {
   }
 }
 
-export async function overrideSyncData<T extends { id: string; updatedAt?: number }>(
-  endpoint: string,
-  localData: T[],
-  userId?: string
-): Promise<T[]> {
-  console.log(`[OVERRIDE SYNC] ${endpoint}: Starting override sync - forcing local data to server...`);
-  console.log(`[OVERRIDE SYNC] ${endpoint}: Local data count: ${localData?.length || 0}`);
-  console.log(`[OVERRIDE SYNC] ${endpoint}: Local data sample:`, JSON.stringify(localData?.slice(0, 2), null, 2));
-  
-  if (!localData || !Array.isArray(localData)) {
-    console.error(`[OVERRIDE SYNC] ${endpoint}: Invalid local data`);
-    return [];
-  }
-
-  const FILE_SYNC_BASE = getFileSyncBase();
-  const SYNC_KEY = getSyncKey();
-
-  if (FILE_SYNC_BASE) {
-    try {
-      console.log(`[OVERRIDE SYNC] ${endpoint}: Fetching current server data...`);
-      const url = FILE_SYNC_BASE.replace(/\/$/, '') + `/get.php?endpoint=${encodeURIComponent(endpoint)}`;
-      const getRes = await fetch(url);
-      
-      let remoteData: T[] = [];
-      if (getRes.ok) {
-        const responseText = await getRes.text();
-        try {
-          const parsed = JSON.parse(responseText);
-          remoteData = Array.isArray(parsed) ? parsed : [];
-          console.log(`[OVERRIDE SYNC] ${endpoint}: Server has ${remoteData.length} items`);
-        } catch {
-          console.error(`[OVERRIDE SYNC] ${endpoint}: Invalid JSON from server`);
-          remoteData = [];
-        }
-      }
-      
-      console.log(`[OVERRIDE SYNC] ${endpoint}: Merging local data into server data...`);
-      const remoteMap = new Map<string, T>();
-      remoteData.forEach(item => remoteMap.set(item.id, item));
-      
-      const currentDeviceId = await getDeviceId();
-      localData.forEach(item => {
-        remoteMap.set(item.id, {
-          ...item,
-          updatedAt: Date.now(),
-          deviceId: currentDeviceId,
-        } as T);
-      });
-      
-      const mergedData = Array.from(remoteMap.values()).filter((item: any) => !item.deleted);
-      console.log(`[OVERRIDE SYNC] ${endpoint}: Override merged result: ${mergedData.length} items`);
-      
-      console.log(`[OVERRIDE SYNC] ${endpoint}: Uploading to server...`);
-      const cleaned = cleanDataForSync(mergedData);
-      console.log(`[OVERRIDE SYNC] ${endpoint}: Data being uploaded count: ${cleaned.length}`);
-      console.log(`[OVERRIDE SYNC] ${endpoint}: Upload URL: ${FILE_SYNC_BASE.replace(/\/$/, '') + `/sync.php?endpoint=${encodeURIComponent(endpoint)}`}`);
-      
-      const syncUrl = FILE_SYNC_BASE.replace(/\/$/, '') + `/sync.php?endpoint=${encodeURIComponent(endpoint)}`;
-      const res = await fetch(syncUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(cleaned),
-      });
-      
-      const responseText = await res.text();
-      console.log(`[OVERRIDE SYNC] ${endpoint}: Server response status: ${res.status}`);
-      console.log(`[OVERRIDE SYNC] ${endpoint}: Server response:`, responseText);
-      
-      if (!res.ok) {
-        console.error(`[OVERRIDE SYNC] ${endpoint}: Upload failed ${res.status}`);
-        console.error(`[OVERRIDE SYNC] ${endpoint}: Response body:`, responseText);
-        return mergedData as T[];
-      }
-      
-      console.log(`[OVERRIDE SYNC] ${endpoint}: ✓ SUCCESS - override complete. ${cleaned.length} items uploaded`);
-      return mergedData as T[];
-    } catch (e) {
-      console.error(`[OVERRIDE SYNC] ${endpoint}: Error`, e);
-      return localData;
-    }
-  } else if (!SYNC_KEY) {
-    console.log(`[OVERRIDE SYNC] ${endpoint}: No sync configured - neither FILE_SYNC_URL nor JSONBIN key`);
-    return localData;
-  }
-
-  try {
-    let binId: string | null = await getBinId(endpoint);
-    
-    let remoteData: T[] = [];
-    if (binId) {
-      console.log(`[OVERRIDE SYNC] ${endpoint}: Fetching from server...`);
-      try {
-        const getResponse = await fetch(`${JSONBIN_BASE_URL}/${binId}/latest`, {
-          headers: {
-            'X-Master-Key': SYNC_KEY,
-          },
-        });
-        
-        if (getResponse.ok) {
-          const responseText = await getResponse.text();
-          try {
-            const getResult = JSON.parse(responseText);
-            if (getResult.record) {
-              if (Array.isArray(getResult.record)) {
-                remoteData = getResult.record;
-              } else if (typeof getResult.record === 'string') {
-                try {
-                  const parsed = JSON.parse(getResult.record);
-                  remoteData = Array.isArray(parsed) ? parsed : [];
-                } catch {
-                  remoteData = [];
-                }
-              }
-            }
-            console.log(`[OVERRIDE SYNC] ${endpoint}: Server has ${remoteData.length} items`);
-          } catch {
-            console.error(`[OVERRIDE SYNC] ${endpoint}: Failed to parse server response`);
-          }
-        }
-      } catch (fetchError) {
-        console.error(`[OVERRIDE SYNC] ${endpoint}: Error fetching from server:`, fetchError);
-      }
-    }
-    
-    console.log(`[OVERRIDE SYNC] ${endpoint}: Merging local data into server data...`);
-    const remoteMap = new Map<string, T>();
-    remoteData.forEach(item => remoteMap.set(item.id, item));
-    
-    const currentDeviceId = await getDeviceId();
-    localData.forEach(item => {
-      remoteMap.set(item.id, {
-        ...item,
-        updatedAt: Date.now(),
-        deviceId: currentDeviceId,
-      } as T);
-    });
-    
-    const mergedData = Array.from(remoteMap.values()).filter((item: any) => !item.deleted);
-    console.log(`[OVERRIDE SYNC] ${endpoint}: Override merged result: ${mergedData.length} items`);
-    
-    const cleanedData = cleanDataForSync(mergedData);
-    
-    if (!binId) {
-      console.log(`[OVERRIDE SYNC] ${endpoint}: Creating new bin...`);
-      const createResponse = await fetch(JSONBIN_BASE_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Master-Key': SYNC_KEY,
-        },
-        body: JSON.stringify(cleanedData),
-      });
-      
-      if (createResponse.ok) {
-        const createResult = await createResponse.json();
-        const newBinId: string = createResult.metadata.id;
-        if (newBinId && typeof newBinId === 'string') {
-          binId = newBinId;
-          await setBinId(endpoint, newBinId);
-          console.log(`[OVERRIDE SYNC] ${endpoint}: Created bin ${binId}`);
-        }
-      } else {
-        console.log(`[OVERRIDE SYNC] ${endpoint}: Failed to create bin`);
-        return cleanedData as T[];
-      }
-    } else {
-      console.log(`[OVERRIDE SYNC] ${endpoint}: Uploading to bin...`);
-      const updateResponse = await fetch(`${JSONBIN_BASE_URL}/${binId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Master-Key': SYNC_KEY,
-        },
-        body: JSON.stringify(cleanedData),
-      });
-      
-      const responseText = await updateResponse.text();
-      console.log(`[OVERRIDE SYNC] ${endpoint}: JSONBIN response status: ${updateResponse.status}`);
-      console.log(`[OVERRIDE SYNC] ${endpoint}: JSONBIN response:`, responseText);
-      
-      if (!updateResponse.ok) {
-        console.error(`[OVERRIDE SYNC] ${endpoint}: Failed to update remote ${updateResponse.status}`);
-        console.error(`[OVERRIDE SYNC] ${endpoint}: Response body:`, responseText);
-      } else {
-        console.log(`[OVERRIDE SYNC] ${endpoint}: ✓ Successfully uploaded ${cleanedData.length} items to JSONBIN`);
-      }
-    }
-    
-    console.log(`[OVERRIDE SYNC] ${endpoint}: ✓ SUCCESS - override complete. ${cleanedData.length} items uploaded`);
-    return cleanedData as T[];
-  } catch (error) {
-    console.error(`[OVERRIDE SYNC] ${endpoint}: Failed`, error);
-    return localData;
-  }
-}
-
 export async function syncData<T extends { id: string; updatedAt?: number }>(
   endpoint: string,
   localData: T[],
   userId?: string,
-  options?: { isDefaultAdminDevice?: boolean; forceDownload?: boolean }
+  options?: { isDefaultAdminDevice?: boolean }
 ): Promise<T[]> {
   return instantSync(endpoint, localData, userId, options);
 }
