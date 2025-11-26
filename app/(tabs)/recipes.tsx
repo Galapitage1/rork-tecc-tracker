@@ -5,12 +5,11 @@ import { useRecipes } from '@/contexts/RecipeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStores } from '@/contexts/StoresContext';
 import Colors from '@/constants/colors';
-import { Plus, Save, X, Upload, AlertCircle, Download } from 'lucide-react-native';
+import { Plus, Save, X, Upload, AlertCircle } from 'lucide-react-native';
 import { RecipeComponent, Recipe } from '@/types';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import { parseRecipeExcelFile } from '@/utils/recipeExcelParser';
-import { exportRecipesToExcel } from '@/utils/recipeExporter';
 import { VoiceSearchInput } from '@/components/VoiceSearchInput';
 import { formatCurrency } from '@/utils/currencyHelper';
 
@@ -28,7 +27,6 @@ export default function RecipesScreen() {
   const [rawMaterialSearch, setRawMaterialSearch] = useState<string>('');
   const [showEditor, setShowEditor] = useState<boolean>(false);
   const [isImporting, setIsImporting] = useState<boolean>(false);
-  const [isExporting, setIsExporting] = useState<boolean>(false);
   const [showImportResults, setShowImportResults] = useState<boolean>(false);
   const [importResults, setImportResults] = useState<{ success: number; warnings: string[]; errors: string[] }>({ success: 0, warnings: [], errors: [] });
 
@@ -151,19 +149,6 @@ export default function RecipesScreen() {
     setComponents([]);
   };
 
-  const handleExport = async () => {
-    try {
-      setIsExporting(true);
-      await exportRecipesToExcel(recipes, products);
-      Alert.alert('Success', 'Recipes exported successfully');
-    } catch (error) {
-      console.error('Export error:', error);
-      Alert.alert('Export Error', error instanceof Error ? error.message : 'Failed to export recipes');
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
   const handleImport = async () => {
     try {
       setIsImporting(true);
@@ -247,18 +232,6 @@ export default function RecipesScreen() {
               style={styles.searchBar}
               inputStyle={styles.searchInput}
             />
-            <TouchableOpacity 
-              style={styles.exportBtn} 
-              onPress={handleExport}
-              disabled={isExporting || recipes.length === 0}
-            >
-              {isExporting ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Download size={16} color="#fff" />
-              )}
-              <Text style={styles.exportBtnText}>Export</Text>
-            </TouchableOpacity>
             <TouchableOpacity 
               style={styles.importBtn} 
               onPress={handleImport}
@@ -489,8 +462,6 @@ const styles = StyleSheet.create({
   toolbar: { flexDirection: 'row', gap: 8, marginBottom: 10 },
   searchBar: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.light.card, borderWidth: 1, borderColor: Colors.light.border, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8 },
   searchInput: { flex: 1, color: Colors.light.text },
-  exportBtn: { backgroundColor: Colors.light.success, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 6, justifyContent: 'center', minWidth: 100 },
-  exportBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
   importBtn: { backgroundColor: Colors.light.accent, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 6, justifyContent: 'center', minWidth: 100 },
   importBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
   list: { flex: 1 },

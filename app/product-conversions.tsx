@@ -3,19 +3,15 @@ import { useRouter, Stack } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStock } from '@/contexts/StockContext';
 import { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, X, ArrowLeft, Download, Upload, Search, Trash } from 'lucide-react-native';
+import { Plus, Edit2, Trash2, X, ArrowLeft, Download, Upload, Search } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { ProductConversion } from '@/types';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { exportConversionsToExcel } from '@/utils/conversionsExporter';
-import { parseConversionsExcel } from '@/utils/conversionsParser';
-import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system';
 
 export default function ProductConversionsScreen() {
   const router = useRouter();
-  const { isAdmin, isSuperAdmin } = useAuth();
-  const { products, productConversions, addProductConversion, importProductConversions, updateProductConversion, deleteProductConversion, clearAllConversions } = useStock();
+  const { currentUser, isAdmin, isSuperAdmin } = useAuth();
+  const { products, productConversions, addProductConversion, updateProductConversion, deleteProductConversion } = useStock();
   const [showConversionModal, setShowConversionModal] = useState<boolean>(false);
   const [editingConversion, setEditingConversion] = useState<ProductConversion | null>(null);
   const [conversionFromProductId, setConversionFromProductId] = useState<string>('');
@@ -149,7 +145,7 @@ export default function ProductConversionsScreen() {
         Alert.alert('Success', 'Product conversion added successfully.');
         resetConversionForm();
       }
-    } catch {
+    } catch (error) {
       Alert.alert('Error', 'Failed to save product conversion.');
     }
   };
@@ -182,228 +178,116 @@ export default function ProductConversionsScreen() {
     });
   };
 
-  const handleClearAllConversions = () => {
-    if (productConversions.length === 0) {
-      Alert.alert('No Data', 'There are no product conversions to delete.');
-      return;
-    }
-
-    openConfirm({
-      title: 'Clear All Conversions',
-      message: `Are you sure you want to delete all ${productConversions.length} product conversions? This action cannot be undone.`,
-      destructive: true,
-      testID: 'confirm-clear-all-conversions',
-      onConfirm: async () => {
-        try {
-          if (typeof clearAllConversions === 'function') {
-            await clearAllConversions();
-            Alert.alert('Success', `Deleted all ${productConversions.length} product conversions.`);
-          } else {
-            const conversionIds = productConversions.map(c => c.id);
-            let deletedCount = 0;
-            for (const conversionId of conversionIds) {
-              await deleteProductConversion(conversionId);
-              deletedCount++;
-            }
-            Alert.alert('Success', `Deleted ${deletedCount} product conversions.`);
-          }
-        } catch (error) {
-          console.error('Clear all error:', error);
-          Alert.alert('Error', 'Failed to delete some conversions.');
-        }
-      },
-    });
-  };
-
-  const handleExportConversions = async () => {
+  const handleExportConversions = () => {
     if (productConversions.length === 0) {
       Alert.alert('No Data', 'There are no product conversions to export.');
       return;
     }
 
-    try {
-      await exportConversionsToExcel(productConversions, products);
-      Alert.alert('Success', `Exported ${productConversions.length} product conversions.`);
-    } catch (error) {
-      console.error('Export error:', error);
-      Alert.alert('Error', `Failed to export conversions: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
+    const exportData = {
+      version: 1,
+      exportDate: new Date().toISOString(),
+      conversions: productConversions.map(conversion => ({
+        id: conversion.id,
+        fromProductId: conversion.fromProductId,
+        toProductId: conversion.toProductId,
+        conversionFactor: conversion.conversionFactor,
+        createdAt: conversion.createdAt,
+        fromProductName: products.find(p => p.id === conversion.fromProductId)?.name || 'Unknown',
+        fromProductUnit: products.find(p => p.id === conversion.fromProductId)?.unit || 'Unknown',
+        toProductName: products.find(p => p.id === conversion.toProductId)?.name || 'Unknown',
+        toProductUnit: products.find(p => p.id === conversion.toProductId)?.unit || 'Unknown',
+      })),
+    };
+
+    const jsonString = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `product-conversions-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    Alert.alert('Success', `Exported ${productConversions.length} product conversions.`);
   };
 
-  const handleImportConversions = async () => {
-    try {
-      let fileContent: string = '';
-      let fileType: 'excel' | 'json' = 'excel';
-      
-      if (Platform.OS === 'web') {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.xlsx,.xls,.json';
-        
-        await new Promise<void>((resolve, reject) => {
-          input.onchange = async (e: any) => {
-            const file = e.target.files?.[0];
-            if (!file) {
-              reject(new Error('No file selected'));
-              return;
-            }
+  const handleImportConversions = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = async (e: any) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
 
-            try {
-              fileType = file.name.toLowerCase().endsWith('.json') ? 'json' : 'excel';
-              
-              if (fileType === 'json') {
-                const text = await file.text();
-                fileContent = text;
-              } else {
-                const arrayBuffer = await file.arrayBuffer();
-                const bytes = new Uint8Array(arrayBuffer);
-                let binary = '';
-                for (let i = 0; i < bytes.byteLength; i++) {
-                  binary += String.fromCharCode(bytes[i]);
-                }
-                fileContent = btoa(binary);
-              }
-              resolve();
-            } catch (err) {
-              reject(err);
-            }
-          };
-          input.click();
-        });
-      } else {
-        const result = await DocumentPicker.getDocumentAsync({
-          type: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/json'],
-          copyToCacheDirectory: true,
-        });
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
 
-        if (result.canceled || !result.assets?.[0]?.uri) {
+        if (!data.conversions || !Array.isArray(data.conversions)) {
+          Alert.alert('Error', 'Invalid file format. Please select a valid product conversions export file.');
           return;
         }
 
-        const fileName = result.assets[0].name || '';
-        fileType = fileName.toLowerCase().endsWith('.json') ? 'json' : 'excel';
+        let imported = 0;
+        let skipped = 0;
+        let errors = 0;
 
-        if (fileType === 'json') {
-          fileContent = await FileSystem.readAsStringAsync(result.assets[0].uri, {
-            encoding: 'utf8',
-          });
-        } else {
-          fileContent = await FileSystem.readAsStringAsync(result.assets[0].uri, {
-            encoding: 'base64',
-          });
-        }
-      }
+        for (const conversionData of data.conversions) {
+          try {
+            const fromProduct = products.find(p => 
+              (p.id === conversionData.fromProductId) || 
+              (p.name.toLowerCase() === conversionData.fromProductName?.toLowerCase() && p.unit === conversionData.fromProductUnit)
+            );
+            const toProduct = products.find(p => 
+              (p.id === conversionData.toProductId) || 
+              (p.name.toLowerCase() === conversionData.toProductName?.toLowerCase() && p.unit === conversionData.toProductUnit)
+            );
 
-      if (!fileContent) {
-        return;
-      }
-
-      let parsedConversions: ProductConversion[] = [];
-      let parseErrors: string[] = [];
-
-      if (fileType === 'json') {
-        console.log('[JSON IMPORT] Starting JSON import...');
-        try {
-          console.log('[JSON IMPORT] File content length:', fileContent.length);
-          console.log('[JSON IMPORT] First 200 chars:', fileContent.substring(0, 200));
-          
-          const jsonData = JSON.parse(fileContent);
-          console.log('[JSON IMPORT] Parsed JSON data:', jsonData);
-          console.log('[JSON IMPORT] Is array:', Array.isArray(jsonData));
-          
-          const conversionsArray = Array.isArray(jsonData) 
-            ? jsonData 
-            : (jsonData.conversions && Array.isArray(jsonData.conversions) ? jsonData.conversions : []);
-          console.log('[JSON IMPORT] Conversions array length:', conversionsArray.length);
-          
-          for (let i = 0; i < conversionsArray.length; i++) {
-            const item = conversionsArray[i];
-            console.log(`[JSON IMPORT] Processing item ${i + 1}:`, item);
-            
-            if (!item.fromProductId || !item.toProductId || !item.conversionFactor) {
-              console.log(`[JSON IMPORT] Item ${i + 1} missing required fields`);
-              parseErrors.push(`Invalid conversion at index ${i + 1}: missing required fields`);
+            if (!fromProduct || !toProduct) {
+              skipped++;
+              console.log('Skipped conversion - products not found:', conversionData);
               continue;
             }
 
             const existingConversion = productConversions.find(c => 
-              c.fromProductId === item.fromProductId && c.toProductId === item.toProductId
+              c.fromProductId === fromProduct.id && c.toProductId === toProduct.id
             );
 
             if (existingConversion) {
-              console.log(`[JSON IMPORT] Item ${i + 1} already exists, skipping`);
+              skipped++;
               continue;
             }
 
             const newConversion: ProductConversion = {
-              id: item.id || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-              fromProductId: item.fromProductId,
-              toProductId: item.toProductId,
-              conversionFactor: Number(item.conversionFactor),
-              createdAt: item.createdAt || Date.now(),
+              id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+              fromProductId: fromProduct.id,
+              toProductId: toProduct.id,
+              conversionFactor: conversionData.conversionFactor,
+              createdAt: Date.now(),
             };
 
-            console.log(`[JSON IMPORT] Adding conversion ${i + 1}:`, newConversion);
-            parsedConversions.push(newConversion);
+            await addProductConversion(newConversion);
+            imported++;
+          } catch (error) {
+            console.error('Error importing conversion:', error);
+            errors++;
           }
-          
-          console.log('[JSON IMPORT] Total conversions parsed:', parsedConversions.length);
-          console.log('[JSON IMPORT] Converting to Excel and downloading...');
-          
-          try {
-            await exportConversionsToExcel(parsedConversions, products);
-            console.log('[JSON IMPORT] Excel export completed');
-          } catch (exportErr) {
-            console.error('[JSON IMPORT] Excel export error:', exportErr);
-          }
-        } catch (err) {
-          console.error('[JSON IMPORT] Parse error:', err);
-          parseErrors.push(`Failed to parse JSON file: ${err instanceof Error ? err.message : 'Unknown error'}`);
-        }
-      } else {
-        const result = parseConversionsExcel(fileContent, products, productConversions);
-        parsedConversions = result.conversions;
-        parseErrors = result.errors;
-      }
-
-      if (parseErrors.length > 0) {
-        console.warn('Parse errors:', parseErrors);
-      }
-
-      if (parsedConversions.length === 0) {
-        Alert.alert(
-          'Import Complete',
-          parseErrors.length > 0 
-            ? `No conversions imported:\n${parseErrors.join('\n')}`
-            : 'No new conversions found in the file.'
-        );
-        return;
-      }
-
-      console.log('[IMPORT] About to bulk import conversions...');
-      console.log('[IMPORT] Parsed conversions:', parsedConversions);
-      
-      try {
-        const importedCount = await importProductConversions(parsedConversions);
-        console.log('[IMPORT] Bulk import complete, imported', importedCount, 'conversions');
-        
-        let message = `Import complete:\n• Imported: ${importedCount}`;
-        if (parsedConversions.length - importedCount > 0) {
-          message += `\n• Skipped (already exist): ${parsedConversions.length - importedCount}`;
-        }
-        if (parseErrors.length > 0) {
-          message += `\n• Warnings: ${parseErrors.length}`;
         }
 
+        let message = `Import complete:\n• Imported: ${imported}\n• Skipped: ${skipped}`;
+        if (errors > 0) {
+          message += `\n• Errors: ${errors}`;
+        }
         Alert.alert('Import Complete', message);
       } catch (error) {
-        console.error('[IMPORT] Error importing conversions:', error);
-        Alert.alert('Error', `Failed to import conversions: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        console.error('Error importing conversions:', error);
+        Alert.alert('Error', 'Failed to import product conversions. Please check the file format.');
       }
-    } catch (error) {
-      console.error('Import error:', error);
-      Alert.alert('Error', `Failed to import conversions: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
+    };
+    input.click();
   };
 
   return (
@@ -456,16 +340,6 @@ export default function ProductConversionsScreen() {
                 <Text style={[styles.buttonText, styles.secondaryButtonText]}>Import</Text>
               </TouchableOpacity>
             </View>
-
-            {productConversions.length > 0 && (
-              <TouchableOpacity
-                style={[styles.button, styles.dangerButton]}
-                onPress={handleClearAllConversions}
-              >
-                <Trash size={18} color={Colors.light.card} />
-                <Text style={styles.buttonText}>Clear All Conversions</Text>
-              </TouchableOpacity>
-            )}
           </View>
 
           {productConversions.length === 0 ? (
@@ -708,7 +582,10 @@ export default function ProductConversionsScreen() {
               <View style={styles.conversionExample}>
                 <Text style={styles.conversionExampleTitle}>Example:</Text>
                 <Text style={styles.conversionExampleText}>
-                  If 1 Chocolate Cake (Whole) = 10 Chocolate Cake (Slice):{`\n`}• From Product: Chocolate Cake (Whole){`\n`}• Conversion Factor: 10{`\n`}• To Product: Chocolate Cake (Slice)
+                  If 1 Chocolate Cake (Whole) = 10 Chocolate Cake (Slice):
+                  {('\n')}• From Product: Chocolate Cake (Whole)
+                  {('\n')}• Conversion Factor: 10
+                  {('\n')}• To Product: Chocolate Cake (Slice)
                 </Text>
               </View>
             </ScrollView>
@@ -781,9 +658,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.light.card,
     borderWidth: 1,
     borderColor: Colors.light.border,
-  },
-  dangerButton: {
-    backgroundColor: Colors.light.danger,
   },
   buttonText: {
     fontSize: 16,

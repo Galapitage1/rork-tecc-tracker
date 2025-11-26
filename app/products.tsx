@@ -1,5 +1,4 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Platform, TextInput, Modal, Image, Switch } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter, Stack } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStock } from '@/contexts/StockContext';
@@ -120,8 +119,6 @@ export default function ProductsScreen() {
       let newCount = 0;
       let updatedCount = 0;
       const updatedProducts: { name: string; unit: string; changes: string[] }[] = [];
-      const productsToAdd: Product[] = [];
-      const productsToUpdate: { id: string; updates: Partial<Product>; name: string; unit: string; changes: string[] }[] = [];
 
       for (const parsedProduct of parsedProducts) {
         const existing = products.find(
@@ -147,40 +144,14 @@ export default function ProductsScreen() {
               showInStock: parsedProduct.showInStock,
               salesBasedRawCalc: parsedProduct.salesBasedRawCalc,
             };
-            productsToUpdate.push({ id: existing.id, updates, name: parsedProduct.name, unit: parsedProduct.unit, changes });
+            await updateProduct(existing.id, updates);
+            updatedProducts.push({ name: parsedProduct.name, unit: parsedProduct.unit, changes });
             updatedCount++;
           }
         } else {
-          productsToAdd.push(parsedProduct);
+          await addProduct(parsedProduct);
           newCount++;
         }
-      }
-
-      console.log('[Import] Batch processing:', newCount, 'new products and', updatedCount, 'updates');
-      
-      // Batch update all products at once
-      let updatedProductsList = [...products];
-      
-      // Apply all updates
-      for (const { id, updates, name, unit, changes } of productsToUpdate) {
-        updatedProductsList = updatedProductsList.map(p =>
-          p.id === id ? { ...p, ...updates, updatedAt: Date.now() } : p
-        );
-        updatedProducts.push({ name, unit, changes });
-      }
-      
-      // Add all new products
-      updatedProductsList = [...updatedProductsList, ...productsToAdd];
-      
-      // Save everything in one operation using the context method
-      if (newCount > 0 || updatedCount > 0) {
-        const productsWithTimestamp = updatedProductsList.map(p => ({
-          ...p,
-          showInStock: p.showInStock !== undefined ? p.showInStock : true,
-          updatedAt: p.updatedAt || Date.now(),
-        }));
-        await AsyncStorage.setItem('@stock_app_products', JSON.stringify(productsWithTimestamp));
-        console.log('[Import] Saved all', productsWithTimestamp.length, 'products to storage in one batch operation');
       }
 
       let message = '';

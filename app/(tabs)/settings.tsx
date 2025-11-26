@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Platform, TextInput, Modal, Image, Switch, Clipboard as RNClipboard, Linking } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Platform, TextInput, Modal, Image, Switch, Clipboard as RNClipboard } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { useState, useEffect } from 'react';
@@ -6,7 +6,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as ImagePicker from 'expo-image-picker';
-import { Upload, Trash2, Settings as SettingsIcon, FileSpreadsheet, Store, Plus, Edit2, X, Package, LogOut, Users as UsersIcon, Camera, ImageIcon, RefreshCw, CloudOff, Cloud, Share2, Link, Pause, Play, ChevronDown, ChevronUp, Mail, Save, Check, Download, Eye, Database } from 'lucide-react-native';
+import { Upload, Trash2, Settings as SettingsIcon, FileSpreadsheet, Store, Plus, Edit2, X, Package, LogOut, Users as UsersIcon, Camera, ImageIcon, RefreshCw, CloudOff, Cloud, Share2, Link, Pause, Play, ChevronDown, ChevronUp, Mail, Save, Check, Download } from 'lucide-react-native';
 import { useStock } from '@/contexts/StockContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useActivityLog } from '@/contexts/ActivityLogContext';
@@ -17,11 +17,10 @@ import { useOrders } from '@/contexts/OrderContext';
 import { useStores } from '@/contexts/StoresContext';
 import { useProduction } from '@/contexts/ProductionContext';
 import { trpcClient } from '@/lib/trpc';
-import { syncWithServer } from '@/utils/trpcSyncManager';
+import { syncData } from '@/utils/syncManager';
 import { useRecipes } from '@/contexts/RecipeContext';
 import { useProductUsage } from '@/contexts/ProductUsageContext';
-import { exportUsersToExcel, parseUsersExcel } from '@/utils/usersExporter';
-import { exportOutletsToExcel, parseOutletsExcel } from '@/utils/outletsExporter';
+import { exportBinIds, importBinIds } from '@/utils/syncManager';
 import { Outlet, Product, ProductType, UserRole, ProductConversion } from '@/types';
 import { hasPermission } from '@/utils/permissions';
 import { parseExcelFile, generateSampleExcelBase64 } from '@/utils/excelParser';
@@ -33,9 +32,9 @@ import { CURRENCIES } from '@/utils/currencyHelper';
 const CAMPAIGN_SETTINGS_KEY = '@campaign_settings';
 
 export default function SettingsScreen() {
-  const { products, outlets, productConversions, addProduct, updateProduct, deleteProduct, importOutlets, addOutlet, updateOutlet, deleteOutlet, addProductConversion, updateProductConversion, deleteProductConversion, clearAllProducts, clearAllOutlets, deleteUserStockChecks, isLoading, isSyncing: isStockSyncing, lastSyncTime: stockLastSync, syncAll, isSyncPaused, toggleSyncPause, viewMode, setViewMode } = useStock();
+  const { products, outlets, productConversions, addProduct, updateProduct, deleteProduct, addOutlet, updateOutlet, deleteOutlet, addProductConversion, updateProductConversion, deleteProductConversion, clearAllProducts, clearAllOutlets, deleteUserStockChecks, isLoading, isSyncing: isStockSyncing, lastSyncTime: stockLastSync, syncAll, isSyncPaused, toggleSyncPause, viewMode, setViewMode } = useStock();
 
-  const { currentUser, users, logout, addUser, updateUser, deleteUser, isSyncing: isUserSyncing, lastSyncTime: userLastSync, syncUsers, clearAllUsers, isSuperAdmin, showPageTabs, toggleShowPageTabs, currency, updateCurrency, importUsers } = useAuth();
+  const { currentUser, users, logout, addUser, updateUser, deleteUser, isSyncing: isUserSyncing, lastSyncTime: userLastSync, syncUsers, clearAllUsers, isSuperAdmin, showPageTabs, toggleShowPageTabs, currency, updateCurrency } = useAuth();
   const { isSyncing: isCustomerSyncing, lastSyncTime: customerLastSync, syncCustomers } = useCustomers();
   const { isSyncing: isRecipeSyncing, lastSyncTime: recipeLastSync, syncRecipes } = useRecipes();
   const { isSyncing: isOrderSyncing, lastSyncTime: orderLastSync, syncOrders } = useOrders();
@@ -107,10 +106,6 @@ export default function SettingsScreen() {
   const [isSavingSettings, setIsSavingSettings] = useState<boolean>(false);
   const [isTestingEmail, setIsTestingEmail] = useState<boolean>(false);
   const [connectionStatus, setConnectionStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-  const [syncProgress, setSyncProgress] = useState<string>('');
-  const [isManuallySyncing, setIsManuallySyncing] = useState<boolean>(false);
-  const [isOverrideSyncing, setIsOverrideSyncing] = useState<boolean>(false);
-  const [isCheckingServer, setIsCheckingServer] = useState<boolean>(false);
 
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
 
@@ -158,7 +153,7 @@ export default function SettingsScreen() {
       
       if (currentUser) {
         try {
-          await syncWithServer('campaign_settings', [settings]);
+          await syncData('campaign_settings', [settings], currentUser.id);
           setConnectionStatus({ type: 'success', message: 'Settings saved and synced successfully' });
         } catch (syncError) {
           console.error('Failed to sync campaign settings:', syncError);
@@ -224,7 +219,7 @@ export default function SettingsScreen() {
     );
   }
 
-  const isSyncing = isManuallySyncing || isStockSyncing || isUserSyncing || isCustomerSyncing || isRecipeSyncing || isOrderSyncing || isStoresSyncing || isProductionSyncing;
+  const isSyncing = isStockSyncing || isUserSyncing || isCustomerSyncing || isRecipeSyncing || isOrderSyncing || isStoresSyncing || isProductionSyncing;
   const lastSyncTime = Math.max(stockLastSync || 0, userLastSync || 0, customerLastSync || 0, recipeLastSync || 0, orderLastSync || 0, storesLastSync || 0, productionLastSync || 0);
 
   const formatLastSync = (timestamp: number) => {
@@ -311,16 +306,14 @@ export default function SettingsScreen() {
     }
 
     try {
-      setIsManuallySyncing(true);
-      console.log('[SETTINGS] Manual sync - Downloading and syncing all data from server...');
-      setSyncProgress('Starting sync...');
+      console.log('[SETTINGS] Manual sync - Syncing all data from server immediately...');
       
       let successCount = 0;
       let failCount = 0;
       
       const syncOperations = [
-        { fn: () => syncAll(false, true), name: 'Stock Data' },
-        { fn: () => syncUsers(undefined, false, true), name: 'Users' },
+        { fn: () => syncAll(false), name: 'Stock Data' },
+        { fn: () => syncUsers(undefined, false), name: 'Users' },
         { fn: syncCustomers, name: 'Customers' },
         { fn: syncRecipes, name: 'Recipes' },
         { fn: syncOrders, name: 'Orders' },
@@ -329,41 +322,34 @@ export default function SettingsScreen() {
         { fn: syncMoirData, name: 'MOIR Data' },
       ];
       
-      console.log('[SETTINGS] Executing', syncOperations.length, 'sync operations with forceDownload...');
+      console.log('[SETTINGS] Executing', syncOperations.length, 'sync operations...');
       
-      for (let i = 0; i < syncOperations.length; i++) {
-        const { fn, name } = syncOperations[i];
+      for (const { fn, name } of syncOperations) {
         try {
-          setSyncProgress(`Syncing ${name}... (${i + 1}/${syncOperations.length})`);
-          console.log(`[SETTINGS] Syncing ${name} with forceDownload...`);
+          console.log(`[SETTINGS] Syncing ${name}...`);
           await fn();
           successCount++;
           console.log(`[SETTINGS] ✓ ${name} synced successfully`);
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await new Promise(resolve => requestAnimationFrame(() => resolve(undefined)));
         } catch (e) {
           console.error(`[SETTINGS] ✗ Sync failed for ${name}:`, e);
           failCount++;
         }
       }
 
-      setSyncProgress('');
-      
       if (failCount > 0) {
         Alert.alert(
           'Partial Success',
-          `${successCount} out of ${syncOperations.length} data types synced successfully. Local data has been overridden with server data where available.`
+          `${successCount} out of ${syncOperations.length} data types synced successfully.`
         );
       } else {
-        Alert.alert('Success', 'All data synced successfully from server. Local data has been overridden with server data.');
+        Alert.alert('Success', 'All data synced successfully from server.');
       }
       
       console.log('[SETTINGS] Manual sync complete - Success:', successCount, 'Failed:', failCount);
     } catch (error) {
       console.error('[SETTINGS] Manual sync error:', error);
       Alert.alert('Sync Failed', 'Failed to sync data. Please check your internet connection and try again.');
-      setSyncProgress('');
-    } finally {
-      setIsManuallySyncing(false);
     }
   };
 
@@ -404,23 +390,13 @@ export default function SettingsScreen() {
           </Text>
         </View>
 
-        {syncProgress && (
-          <View style={styles.syncProgressCard}>
-            <ActivityIndicator size="small" color={Colors.light.tint} />
-            <Text style={styles.syncProgressText}>{syncProgress}</Text>
-          </View>
-        )}
-
         <TouchableOpacity
           style={[styles.button, styles.primaryButton]}
           onPress={handleManualSync}
           disabled={isSyncing || !hasPermission(currentUser?.role, 'enableSync')}
         >
           {isSyncing ? (
-            <>
-              <ActivityIndicator color={Colors.light.card} />
-              {syncProgress && <Text style={styles.buttonText}>{syncProgress}</Text>}
-            </>
+            <ActivityIndicator color={Colors.light.card} />
           ) : (
             <>
               <RefreshCw size={20} color={Colors.light.card} />
@@ -428,179 +404,6 @@ export default function SettingsScreen() {
             </>
           )}
         </TouchableOpacity>
-
-        {isSuperAdmin && (
-          <>
-            <TouchableOpacity
-            style={[styles.button, styles.dangerButton]}
-            onPress={() => {
-              openConfirm({
-                title: 'Over-ride Data to Server',
-                message:
-                  'This will forcefully sync ALL local data to the server, replacing or adding data that doesn\'t exist. Other devices will download this data on their next sync. This is useful when you have important data that needs to be on the server. Are you sure?',
-                destructive: true,
-                testID: 'confirm-override-sync',
-                onConfirm: async () => {
-                  if (!currentUser) {
-                    Alert.alert('Error', 'Please login to override sync.');
-                    return;
-                  }
-
-                  try {
-                    setIsOverrideSyncing(true);
-                    setSyncProgress('Starting override sync...');
-                    console.log('[OVERRIDE] Starting override sync for all data...');
-
-                    let successCount = 0;
-                    let failCount = 0;
-
-                    const dataToOverride: Array<{ key: string; data: any[] }> = [
-                      { key: 'products', data: products as any[] },
-                      { key: 'outlets', data: outlets as any[] },
-                      { key: 'users', data: users as any[] },
-                      { key: 'product_conversions', data: productConversions as any[] },
-                    ];
-
-                    for (let i = 0; i < dataToOverride.length; i++) {
-                      const { key, data } = dataToOverride[i];
-                      try {
-                        setSyncProgress(`Over-riding ${key}... (${i + 1}/${dataToOverride.length})`);
-                        console.log(`[OVERRIDE] Over-riding ${key} with ${data.length} items...`);
-                        await syncWithServer(key, data as any, { forceDownload: false });
-                        successCount++;
-                        console.log(`[OVERRIDE] ✓ ${key} over-ride complete`);
-                        await new Promise(resolve => setTimeout(resolve, 200));
-                      } catch (e) {
-                        console.error(`[OVERRIDE] ✗ Over-ride failed for ${key}:`, e);
-                        failCount++;
-                      }
-                    }
-
-                    setSyncProgress('');
-
-                    if (failCount > 0) {
-                      Alert.alert(
-                        'Partial Success',
-                        `${successCount} out of ${dataToOverride.length} data types over-ridden successfully. Other devices will now download this data.`
-                      );
-                    } else {
-                      Alert.alert(
-                        'Success',
-                        'All local data has been over-ridden to the server. Other devices will now download this data on their next sync.'
-                      );
-                    }
-
-                    console.log('[OVERRIDE] Override sync complete - Success:', successCount, 'Failed:', failCount);
-                  } catch (error) {
-                    console.error('[OVERRIDE] Override sync error:', error);
-                    Alert.alert('Error', 'Failed to override data. Please try again.');
-                    setSyncProgress('');
-                  } finally {
-                    setIsOverrideSyncing(false);
-                  }
-                },
-              });
-            }}
-            disabled={isOverrideSyncing || isSyncing || !hasPermission(currentUser?.role, 'enableSync')}
-          >
-            {isOverrideSyncing ? (
-              <>
-                <ActivityIndicator color={Colors.light.card} />
-                {syncProgress && <Text style={styles.buttonText}>{syncProgress}</Text>}
-              </>
-            ) : (
-              <>
-                <Upload size={20} color={Colors.light.card} />
-                <Text style={styles.buttonText}>Over-ride Data</Text>
-              </>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.button, styles.secondaryButton]}
-            onPress={async () => {
-              setIsCheckingServer(true);
-              try {
-                console.log('[CHECK SERVER] Checking server data...');
-                const FILE_SYNC_BASE = process.env.EXPO_PUBLIC_FILE_SYNC_URL || '';
-                
-                if (FILE_SYNC_BASE) {
-                  const endpoints = ['products', 'outlets', 'users', 'product_conversions'];
-                  let report = 'Server Data:\n\n';
-                  
-                  for (const endpoint of endpoints) {
-                    try {
-                      const url = FILE_SYNC_BASE.replace(/\/$/, '') + `/get.php?endpoint=${encodeURIComponent(endpoint)}`;
-                      console.log(`[CHECK SERVER] Fetching ${endpoint} from:`, url);
-                      const res = await fetch(url);
-                      
-                      if (res.ok) {
-                        const responseText = await res.text();
-                        try {
-                          const data = JSON.parse(responseText);
-                          const count = Array.isArray(data) ? data.length : 0;
-                          report += `${endpoint}: ${count} items\n`;
-                          console.log(`[CHECK SERVER] ${endpoint}: ${count} items`);
-                          
-                          if (count > 0 && Array.isArray(data)) {
-                            const sample = data.slice(0, 2).map((item: any) => 
-                              `  - ${item.name || item.username || item.id || 'Unknown'}`
-                            ).join('\n');
-                            report += sample + '\n';
-                            if (count > 2) report += `  ... and ${count - 2} more\n`;
-                          }
-                          report += '\n';
-                        } catch (e) {
-                          report += `${endpoint}: Error parsing data\n\n`;
-                          console.error(`[CHECK SERVER] ${endpoint}: Parse error`, e);
-                        }
-                      } else {
-                        report += `${endpoint}: Server returned ${res.status}\n\n`;
-                        console.error(`[CHECK SERVER] ${endpoint}: Server error ${res.status}`);
-                      }
-                    } catch (e) {
-                      report += `${endpoint}: Connection failed\n\n`;
-                      console.error(`[CHECK SERVER] ${endpoint}: Error`, e);
-                    }
-                  }
-                  
-                  Alert.alert(
-                    'Server Data Check',
-                    report,
-                    [
-                      { text: 'Open Console', onPress: () => {
-                        console.log('\n=== SERVER DATA CHECK COMPLETE ===');
-                        console.log('Check the console above for detailed logs');
-                      }},
-                      { text: 'OK' }
-                    ]
-                  );
-                } else {
-                  Alert.alert('Error', 'File sync URL not configured');
-                }
-              } catch (error) {
-                console.error('[CHECK SERVER] Error:', error);
-                Alert.alert('Error', 'Failed to check server data');
-              } finally {
-                setIsCheckingServer(false);
-              }
-            }}
-            disabled={isCheckingServer || !hasPermission(currentUser?.role, 'enableSync')}
-          >
-            {isCheckingServer ? (
-              <>
-                <ActivityIndicator color={Colors.light.tint} />
-                <Text style={[styles.buttonText, styles.secondaryButtonText]}>Checking...</Text>
-              </>
-            ) : (
-              <>
-                <Eye size={20} color={Colors.light.tint} />
-                <Text style={[styles.buttonText, styles.secondaryButtonText]}>Check Server Data</Text>
-              </>
-            )}
-          </TouchableOpacity>
-          </>
-        )}
       </View>
 
       {/* User Data Section */}
@@ -676,74 +479,18 @@ export default function SettingsScreen() {
               ))}
 
               {hasPermission(currentUser?.role, 'manageUsers') && (
-                <>
-                  <TouchableOpacity
-                    style={[styles.button, styles.primaryButton]}
-                    onPress={() => {
-                      setEditingUser(null);
-                      setNewUsername('');
-                      setNewUserRole('user');
-                      setShowUserModal(true);
-                    }}
-                  >
-                    <Plus size={20} color={Colors.light.card} />
-                    <Text style={styles.buttonText}>Add User</Text>
-                  </TouchableOpacity>
-
-                  <View style={{ flexDirection: 'row', gap: 12 }}>
-                    <TouchableOpacity
-                      style={[styles.button, styles.secondaryButton, { flex: 1 }]}
-                      onPress={async () => {
-                        try {
-                          await exportUsersToExcel(users);
-                          Alert.alert('Success', 'Users exported successfully');
-                        } catch (error) {
-                          Alert.alert('Error', 'Failed to export users');
-                        }
-                      }}
-                    >
-                      <Download size={20} color={Colors.light.tint} />
-                      <Text style={[styles.buttonText, styles.secondaryButtonText]}>Export Excel</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[styles.button, styles.secondaryButton, { flex: 1 }]}
-                      onPress={async () => {
-                        try {
-                          const result = await DocumentPicker.getDocumentAsync({ type: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel'] });
-                          if (result.assets && result.assets.length > 0) {
-                            const fileUri = result.assets[0].uri;
-                            let fileContent: string;
-                            if (Platform.OS === 'web') {
-                              const response = await fetch(fileUri);
-                              const blob = await response.blob();
-                              fileContent = await new Promise((resolve) => {
-                                const reader = new FileReader();
-                                reader.onloadend = () => resolve(reader.result as string);
-                                reader.readAsDataURL(blob);
-                              });
-                            } else {
-                              fileContent = await FileSystem.readAsStringAsync(fileUri, { encoding: FileSystem.EncodingType.Base64 });
-                            }
-                            const base64 = fileContent.split(',')[1] || fileContent;
-                            const { data: parsedUsers, errors } = await parseUsersExcel(base64);
-                            if (errors.length > 0) {
-                              Alert.alert('Error', errors.join('\n'));
-                              return;
-                            }
-                            const { added, updated } = await currentUser?.username && importUsers ? await importUsers(parsedUsers) : { added: 0, updated: 0 };
-                            Alert.alert('Success', `Imported: ${added} new users, Updated: ${updated} existing users`);
-                          }
-                        } catch (error) {
-                          Alert.alert('Error', 'Failed to import users');
-                        }
-                      }}
-                    >
-                      <Upload size={20} color={Colors.light.tint} />
-                      <Text style={[styles.buttonText, styles.secondaryButtonText]}>Import Excel</Text>
-                    </TouchableOpacity>
-                  </View>
-                </>
+                <TouchableOpacity
+                  style={[styles.button, styles.primaryButton]}
+                  onPress={() => {
+                    setEditingUser(null);
+                    setNewUsername('');
+                    setNewUserRole('user');
+                    setShowUserModal(true);
+                  }}
+                >
+                  <Plus size={20} color={Colors.light.card} />
+                  <Text style={styles.buttonText}>Add User</Text>
+                </TouchableOpacity>
               )}
             </>
           )}
@@ -823,85 +570,19 @@ export default function SettingsScreen() {
               ))}
 
               {hasPermission(currentUser?.role, 'manageOutlets') && (
-                <>
-                  <TouchableOpacity
-                    style={[styles.button, styles.primaryButton]}
-                    onPress={() => {
-                      setEditingOutlet(null);
-                      setOutletName('');
-                      setOutletLocation('');
-                      setOutletType('sales');
-                      setShowOutletModal(true);
-                    }}
-                  >
-                    <Plus size={20} color={Colors.light.card} />
-                    <Text style={styles.buttonText}>Add Outlet</Text>
-                  </TouchableOpacity>
-
-                  <View style={{ flexDirection: 'row', gap: 12 }}>
-                    <TouchableOpacity
-                      style={[styles.button, styles.secondaryButton, { flex: 1 }]}
-                      onPress={async () => {
-                        try {
-                          await exportOutletsToExcel(outlets);
-                          Alert.alert('Success', 'Outlets exported successfully');
-                        } catch (error) {
-                          Alert.alert('Error', 'Failed to export outlets');
-                        }
-                      }}
-                    >
-                      <Download size={20} color={Colors.light.tint} />
-                      <Text style={[styles.buttonText, styles.secondaryButtonText]}>Export Excel</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[styles.button, styles.secondaryButton, { flex: 1 }]}
-                      onPress={async () => {
-                        try {
-                          const result = await DocumentPicker.getDocumentAsync({ type: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel'] });
-                          if (result.assets && result.assets.length > 0) {
-                            const fileUri = result.assets[0].uri;
-                            let fileContent: string;
-                            if (Platform.OS === 'web') {
-                              const response = await fetch(fileUri);
-                              const blob = await response.blob();
-                              fileContent = await new Promise((resolve) => {
-                                const reader = new FileReader();
-                                reader.onloadend = () => resolve(reader.result as string);
-                                reader.readAsDataURL(blob);
-                              });
-                            } else {
-                              fileContent = await FileSystem.readAsStringAsync(fileUri, { encoding: FileSystem.EncodingType.Base64 });
-                            }
-                            const base64 = fileContent.split(',')[1] || fileContent;
-                            const { data: parsedOutlets, errors } = await parseOutletsExcel(base64);
-                            if (errors.length > 0) {
-                              Alert.alert('Error', errors.join('\n'));
-                              return;
-                            }
-                            if (parsedOutlets.length === 0) {
-                              Alert.alert('No Data', 'No valid outlets found in the Excel file');
-                              return;
-                            }
-                            const outletsToImport = parsedOutlets.map((outlet: { name: string }, i: number) => ({
-                              id: `outlet-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${i}`,
-                              ...outlet,
-                              createdAt: Date.now(),
-                              updatedAt: Date.now(),
-                            }));
-                            const importedCount = await importOutlets(outletsToImport);
-                            Alert.alert('Success', `Imported ${importedCount} new outlet(s)${importedCount !== parsedOutlets.length ? ` (${parsedOutlets.length - importedCount} duplicate(s) skipped)` : ''} successfully`);
-                          }
-                        } catch (error) {
-                          Alert.alert('Error', 'Failed to import outlets');
-                        }
-                      }}
-                    >
-                      <Upload size={20} color={Colors.light.tint} />
-                      <Text style={[styles.buttonText, styles.secondaryButtonText]}>Import Excel</Text>
-                    </TouchableOpacity>
-                  </View>
-                </>
+                <TouchableOpacity
+                  style={[styles.button, styles.primaryButton]}
+                  onPress={() => {
+                    setEditingOutlet(null);
+                    setOutletName('');
+                    setOutletLocation('');
+                    setOutletType('sales');
+                    setShowOutletModal(true);
+                  }}
+                >
+                  <Plus size={20} color={Colors.light.card} />
+                  <Text style={styles.buttonText}>Add Outlet</Text>
+                </TouchableOpacity>
               )}
             </>
           )}
@@ -1435,248 +1116,6 @@ export default function SettingsScreen() {
         </View>
       )}
 
-      <Modal
-        visible={showUserModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowUserModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                {editingUser ? 'Edit User' : 'Add User'}
-              </Text>
-              <TouchableOpacity onPress={() => setShowUserModal(false)}>
-                <X size={24} color={Colors.light.muted} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Username</Text>
-              <TextInput
-                style={styles.input}
-                value={newUsername}
-                onChangeText={setNewUsername}
-                placeholder="Enter username"
-                placeholderTextColor={Colors.light.muted}
-                autoCapitalize="none"
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Role</Text>
-              <View style={styles.pickerContainer}>
-                {Platform.OS === 'web' ? (
-                  <select
-                    value={newUserRole}
-                    onChange={(e: any) => setNewUserRole(e.target.value)}
-                    style={{
-                      backgroundColor: Colors.light.background,
-                      borderWidth: 1,
-                      borderColor: Colors.light.border,
-                      borderRadius: 8,
-                      padding: 12,
-                      fontSize: 16,
-                      color: Colors.light.text,
-                      width: '100%',
-                    }}
-                  >
-                    <option value="user">User</option>
-                    <option value="admin">Admin</option>
-                    {isSuperAdmin && <option value="superadmin">Super Admin</option>}
-                  </select>
-                ) : (
-                  <TouchableOpacity
-                    style={styles.input}
-                    onPress={() => {
-                      Alert.alert(
-                        'Select Role',
-                        '',
-                        [
-                          { text: 'User', onPress: () => setNewUserRole('user') },
-                          { text: 'Admin', onPress: () => setNewUserRole('admin') },
-                          ...(isSuperAdmin ? [{ text: 'Super Admin', onPress: () => setNewUserRole('superadmin') }] : []),
-                          { text: 'Cancel', style: 'cancel' as const }
-                        ]
-                      );
-                    }}
-                  >
-                    <Text style={{ color: Colors.light.text }}>
-                      {newUserRole.charAt(0).toUpperCase() + newUserRole.slice(1)}
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
-
-            <View style={{ flexDirection: 'row', gap: 12, marginTop: 8 }}>
-              <TouchableOpacity
-                style={[styles.button, styles.secondaryButton, { flex: 1, marginBottom: 0 }]}
-                onPress={() => setShowUserModal(false)}
-              >
-                <Text style={[styles.buttonText, styles.secondaryButtonText]}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.button, styles.primaryButton, { flex: 1, marginBottom: 0 }]}
-                onPress={async () => {
-                  if (!newUsername.trim()) {
-                    Alert.alert('Error', 'Please enter a username');
-                    return;
-                  }
-                  try {
-                    if (editingUser) {
-                      await updateUser(editingUser.id, {
-                        username: newUsername.trim(),
-                        role: newUserRole,
-                      });
-                      Alert.alert('Success', 'User updated successfully');
-                    } else {
-                      await addUser(newUsername.trim(), newUserRole);
-                      Alert.alert('Success', 'User added successfully');
-                    }
-                    setShowUserModal(false);
-                  } catch (error) {
-                    Alert.alert('Error', 'Failed to save user');
-                  }
-                }}
-              >
-                <Text style={styles.buttonText}>{editingUser ? 'Update' : 'Add'}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal
-        visible={showOutletModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowOutletModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                {editingOutlet ? 'Edit Outlet' : 'Add Outlet'}
-              </Text>
-              <TouchableOpacity onPress={() => setShowOutletModal(false)}>
-                <X size={24} color={Colors.light.muted} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Outlet Name</Text>
-              <TextInput
-                style={styles.input}
-                value={outletName}
-                onChangeText={setOutletName}
-                placeholder="Enter outlet name"
-                placeholderTextColor={Colors.light.muted}
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Location</Text>
-              <TextInput
-                style={styles.input}
-                value={outletLocation}
-                onChangeText={setOutletLocation}
-                placeholder="Enter location"
-                placeholderTextColor={Colors.light.muted}
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Outlet Type</Text>
-              <View style={styles.pickerContainer}>
-                {Platform.OS === 'web' ? (
-                  <select
-                    value={outletType}
-                    onChange={(e: any) => setOutletType(e.target.value)}
-                    style={{
-                      backgroundColor: Colors.light.background,
-                      borderWidth: 1,
-                      borderColor: Colors.light.border,
-                      borderRadius: 8,
-                      padding: 12,
-                      fontSize: 16,
-                      color: Colors.light.text,
-                      width: '100%',
-                    }}
-                  >
-                    <option value="sales">Sales</option>
-                    <option value="production">Production</option>
-                  </select>
-                ) : (
-                  <TouchableOpacity
-                    style={styles.input}
-                    onPress={() => {
-                      Alert.alert(
-                        'Select Outlet Type',
-                        '',
-                        [
-                          { text: 'Sales', onPress: () => setOutletType('sales') },
-                          { text: 'Production', onPress: () => setOutletType('production') },
-                          { text: 'Cancel', style: 'cancel' as const }
-                        ]
-                      );
-                    }}
-                  >
-                    <Text style={{ color: Colors.light.text }}>
-                      {outletType.charAt(0).toUpperCase() + outletType.slice(1)}
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
-
-            <View style={{ flexDirection: 'row', gap: 12, marginTop: 8 }}>
-              <TouchableOpacity
-                style={[styles.button, styles.secondaryButton, { flex: 1, marginBottom: 0 }]}
-                onPress={() => setShowOutletModal(false)}
-              >
-                <Text style={[styles.buttonText, styles.secondaryButtonText]}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.button, styles.primaryButton, { flex: 1, marginBottom: 0 }]}
-                onPress={async () => {
-                  if (!outletName.trim()) {
-                    Alert.alert('Error', 'Please enter an outlet name');
-                    return;
-                  }
-                  try {
-                    if (editingOutlet) {
-                      await updateOutlet(editingOutlet.id, {
-                        name: outletName.trim(),
-                        location: outletLocation.trim(),
-                        outletType,
-                      });
-                      Alert.alert('Success', 'Outlet updated successfully');
-                    } else {
-                      await addOutlet({
-                        id: `outlet-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                        name: outletName.trim(),
-                        location: outletLocation.trim(),
-                        outletType,
-                        createdAt: Date.now(),
-                        updatedAt: Date.now(),
-                      });
-                      Alert.alert('Success', 'Outlet added successfully');
-                    }
-                    setShowOutletModal(false);
-                  } catch (error) {
-                    Alert.alert('Error', 'Failed to save outlet');
-                  }
-                }}
-              >
-                <Text style={styles.buttonText}>{editingOutlet ? 'Update' : 'Add'}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
       <ConfirmDialog
         visible={!!confirmVisible}
         title={confirmState?.title ?? ''}
@@ -1886,49 +1325,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.light.muted,
     marginTop: 4,
-  },
-  syncProgressCard: {
-    backgroundColor: Colors.light.card,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: Colors.light.tint,
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    gap: 12,
-  },
-  syncProgressText: {
-    fontSize: 14,
-    color: Colors.light.tint,
-    fontWeight: '600' as const,
-    flex: 1,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center' as const,
-    alignItems: 'center' as const,
-    padding: 16,
-  },
-  modalContent: {
-    backgroundColor: Colors.light.card,
-    borderRadius: 16,
-    padding: 24,
-    width: '100%',
-    maxWidth: 500,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-  },
-  modalHeader: {
-    flexDirection: 'row' as const,
-    justifyContent: 'space-between' as const,
-    alignItems: 'center' as const,
-    marginBottom: 24,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700' as const,
-    color: Colors.light.text,
   },
 });
