@@ -2,7 +2,7 @@ import createContextHook from '@nkzw/create-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { ProductionRequest, ApprovedProduction } from '@/types';
-import { instantSync } from '@/utils/syncManager';
+import { syncWithServer } from '@/utils/trpcSyncManager';
 
 const STORAGE_KEYS = {
   PRODUCTION_REQUESTS: '@stock_app_production_requests',
@@ -163,8 +163,8 @@ export const [ProductionProvider, useProduction] = createContextHook(() => {
       
       console.log('[ProductionContext] Starting sync...');
       const [syncedRequests, syncedApprovals] = await Promise.all([
-        instantSync<ProductionRequest>('production_requests', productionRequests, currentUser.id),
-        instantSync<ApprovedProduction>('approved_productions', approvedProductions, currentUser.id),
+        syncWithServer<ProductionRequest>('production_requests', productionRequests),
+        syncWithServer<ApprovedProduction>('approved_productions', approvedProductions),
       ]);
 
       await AsyncStorage.setItem(STORAGE_KEYS.PRODUCTION_REQUESTS, JSON.stringify(syncedRequests));

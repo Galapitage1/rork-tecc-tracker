@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useState, useEffect, useCallback } from 'react';
 import * as Location from 'expo-location';
 
-import { syncData } from '@/utils/syncManager';
+import { syncWithServer } from '@/utils/trpcSyncManager';
 import { moirBackgroundSyncManager } from '@/utils/moirBackgroundSync';
 
 export interface MoirUser {
@@ -152,9 +152,9 @@ export const [MoirProvider, useMoir] = createContextHook(() => {
       console.log('MoirContext syncAllData: Starting sync with', dataToSync.users.length, 'users');
 
       const [syncedUsers, syncedRecords, syncedLocations] = await Promise.all([
-        syncData('moir_users', dataToSync.users, 'moir-system'),
-        syncData('moir_records', dataToSync.records, 'moir-system'),
-        syncData('moir_locations', dataToSync.locations, 'moir-system'),
+        syncWithServer<MoirUser>('moir_users', dataToSync.users),
+        syncWithServer<MoirRecord>('moir_records', dataToSync.records),
+        syncWithServer<MoirLocation>('moir_locations', dataToSync.locations),
       ]);
 
       console.log('MoirContext syncAllData: Synced', (syncedUsers as MoirUser[]).length, 'users from server');
@@ -329,11 +329,11 @@ export const [MoirProvider, useMoir] = createContextHook(() => {
       console.log('MoirContext: Updated state');
       
       console.log('MoirContext: Syncing OUT to server...');
-      syncData('moir_records', updatedRecords, 'moir-system')
+      syncWithServer<MoirRecord>('moir_records', updatedRecords)
         .then((syncedRecords) => {
-          console.log('MoirContext: Sync complete, received', (syncedRecords as MoirRecord[]).length, 'records');
+          console.log('MoirContext: Sync complete, received', syncedRecords.length, 'records');
           AsyncStorage.setItem(STORAGE_KEYS.MOIR_RECORDS, JSON.stringify(syncedRecords));
-          setRecords((syncedRecords as MoirRecord[]).filter(r => !r.deleted));
+          setRecords(syncedRecords.filter(r => !r.deleted));
         })
         .catch((error) => {
           console.error('MoirContext: Sync failed:', error);
@@ -421,11 +421,11 @@ export const [MoirProvider, useMoir] = createContextHook(() => {
       await AsyncStorage.setItem(STORAGE_KEYS.MOIR_LOCATIONS, JSON.stringify(updatedLocations));
       setLocations(updatedLocations);
       
-      syncData('moir_locations', updatedLocations, 'moir-system')
+      syncWithServer<MoirLocation>('moir_locations', updatedLocations)
         .then((synced) => {
           console.log('MoirContext: Location synced successfully');
           AsyncStorage.setItem(STORAGE_KEYS.MOIR_LOCATIONS, JSON.stringify(synced));
-          setLocations((synced as MoirLocation[]).filter(l => !l.deleted));
+          setLocations(synced.filter(l => !l.deleted));
         })
         .catch(e => console.error('MoirContext: Location sync failed:', e));
     } catch (error) {

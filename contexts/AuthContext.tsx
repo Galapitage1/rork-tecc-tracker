@@ -2,7 +2,7 @@ import createContextHook from '@nkzw/create-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { User, UserRole } from '@/types';
-import { instantSync } from '@/utils/syncManager';
+import { syncWithServer } from '@/utils/trpcSyncManager';
 import { performDailyCleanup } from '@/utils/storageCleanup';
 
 const STORAGE_KEYS = {
@@ -171,7 +171,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     try {
       if (initialUsersSynced || syncInProgressRef.current) return;
       syncInProgressRef.current = true;
-      const synced = await instantSync<User>('users', users, 'auth-system');
+      const synced = await syncWithServer<User>('users', users);
       await AsyncStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(synced));
       setUsers(synced.filter(u => !u.deleted));
       setLastSyncTime(Date.now());
@@ -238,7 +238,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       }
       console.log('[AuthContext] Starting sync...');
       const dataToSync = usersToSync || users;
-      const synced = await instantSync<User>('users', dataToSync, 'auth-system', { forceDownload });
+      const synced = await syncWithServer<User>('users', dataToSync, { forceDownload });
       await AsyncStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(synced));
       setUsers(synced.filter(u => !u.deleted));
       if (currentUser && synced.find(u => u.id === currentUser.id)) {
@@ -421,7 +421,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
       if (currentUser?.id) {
         try {
-          await instantSync<User>('users', finalUsers, currentUser.id);
+          await syncWithServer<User>('users', finalUsers);
         } catch (syncError) {
           console.error('clearAllUsers: Sync failed', syncError);
         }

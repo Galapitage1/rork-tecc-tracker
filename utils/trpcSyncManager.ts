@@ -22,12 +22,13 @@ export async function setLastSyncTime(collection: string, time: number): Promise
 
 export async function syncWithServer<T extends { id: string; updatedAt?: number }>(
   collection: string,
-  localData: T[]
+  localData: T[],
+  options?: { forceDownload?: boolean }
 ): Promise<T[]> {
   console.log(`[TRPC SYNC] ${collection}: Starting sync with ${localData.length} local items...`);
   
   try {
-    const lastSyncTime = await getLastSyncTime(collection);
+    const lastSyncTime = options?.forceDownload ? undefined : await getLastSyncTime(collection);
     
     const result = await trpcClient.sync.syncData.mutate({
       collection,
@@ -37,8 +38,8 @@ export async function syncWithServer<T extends { id: string; updatedAt?: number 
     
     console.log(`[TRPC SYNC] ${collection}: Server returned ${result.data.length} items`);
     
-    if (result.data.length > 0) {
-      const merged = mergeData(localData, result.data);
+    if (result.data.length > 0 || options?.forceDownload) {
+      const merged = mergeData(localData, result.data, options?.forceDownload);
       await setLastSyncTime(collection, result.syncTime);
       console.log(`[TRPC SYNC] ${collection}: ✓ Merged to ${merged.length} items`);
       return merged;
@@ -49,7 +50,8 @@ export async function syncWithServer<T extends { id: string; updatedAt?: number 
     return localData;
   } catch (error) {
     console.error(`[TRPC SYNC] ${collection}: Error`, error);
-    throw error;
+    console.log(`[TRPC SYNC] ${collection}: Using local data only`);
+    return localData;
   }
 }
 
@@ -73,15 +75,22 @@ export async function fetchFromServer<T extends { id: string; updatedAt?: number
     return result.data as T[];
   } catch (error) {
     console.error(`[TRPC SYNC] ${collection}: Error fetching`, error);
-    throw error;
+    return [];
   }
 }
 
 function mergeData<T extends { id: string; updatedAt?: number; deleted?: boolean }>(
   local: T[],
-  remote: T[]
+  remote: T[],
+  forceDownload: boolean = false
 ): T[] {
   const merged = new Map<string, T>();
+  
+  if (forceDownload && remote.length > 0) {
+    console.log('[TRPC MERGE] Force download mode - using remote data only');
+    remote.forEach(item => merged.set(item.id, item));
+    return Array.from(merged.values()).filter(item => !item.deleted);
+  }
   
   local.forEach(item => merged.set(item.id, item));
   

@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useState, useEffect, useCallback, useMemo, useRef, ReactNode, createContext, useContext } from 'react';
 import { Product, StockCheck, StockCount, ProductRequest, Outlet, ProductConversion, InventoryStock, SalesDeduction, SalesReconciliationHistory } from '@/types';
-import { instantSync } from '@/utils/syncManager';
+import { syncWithServer } from '@/utils/trpcSyncManager';
 
 const STORAGE_KEYS = {
   PRODUCTS: '@stock_app_products',
@@ -457,12 +457,12 @@ export function StockProvider({ children, currentUser }: { children: ReactNode; 
       console.log('[StockContext] Starting sync...');
 
       const [syncedProducts, syncedStockChecks, syncedRequests, syncedOutlets, syncedConversions, syncedInventory] = await Promise.all([
-        instantSync<Product>('products', products, currentUser?.id, { forceDownload }),
-        instantSync<StockCheck>('stock_checks', stockChecks, currentUser?.id, { forceDownload }),
-        instantSync<ProductRequest>('requests', requests, currentUser?.id, { forceDownload }),
-        instantSync<Outlet>('outlets', outlets, currentUser?.id, { forceDownload }),
-        instantSync<ProductConversion>('product_conversions', productConversions, currentUser?.id, { forceDownload }),
-        instantSync<InventoryStock>('inventory_stocks', inventoryStocks, currentUser?.id, { forceDownload }),
+        syncWithServer<Product>('products', products, { forceDownload }),
+        syncWithServer<StockCheck>('stock_checks', stockChecks, { forceDownload }),
+        syncWithServer<ProductRequest>('requests', requests, { forceDownload }),
+        syncWithServer<Outlet>('outlets', outlets, { forceDownload }),
+        syncWithServer<ProductConversion>('product_conversions', productConversions, { forceDownload }),
+        syncWithServer<InventoryStock>('inventory_stocks', inventoryStocks, { forceDownload }),
       ]);
 
       await Promise.all([

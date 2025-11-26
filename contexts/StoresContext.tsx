@@ -2,7 +2,7 @@ import createContextHook from '@nkzw/create-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { StoreProduct, Supplier, GRN } from '@/types';
-import { instantSync } from '@/utils/syncManager';
+import { syncWithServer } from '@/utils/trpcSyncManager';
 
 const STORAGE_KEYS = {
   STORE_PRODUCTS: '@stock_app_store_products',
@@ -314,9 +314,9 @@ export const [StoresProvider, useStores] = createContextHook(() => {
       
       console.log('[StoresContext] Starting sync...');
       const [syncedStoreProducts, syncedSuppliers, syncedGRNs] = await Promise.all([
-        instantSync<StoreProduct>('store_products', storeProducts, currentUser.id),
-        instantSync<Supplier>('suppliers', suppliers, currentUser.id),
-        instantSync<GRN>('grns', grns, currentUser.id),
+        syncWithServer<StoreProduct>('store_products', storeProducts),
+        syncWithServer<Supplier>('suppliers', suppliers),
+        syncWithServer<GRN>('grns', grns),
       ]);
 
       await AsyncStorage.setItem(STORAGE_KEYS.STORE_PRODUCTS, JSON.stringify(syncedStoreProducts));
