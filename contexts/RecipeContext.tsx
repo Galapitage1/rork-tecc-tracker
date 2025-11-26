@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useContext, ReactNode, useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { Product, Recipe } from '@/types';
-import { syncData } from '@/utils/syncManager';
+import { syncWithServer } from '@/utils/trpcSyncManager';
 
 const STORAGE_KEY = '@stock_app_recipes';
 
@@ -99,9 +99,9 @@ export function RecipeProvider({ children, currentUser, products }: { children: 
       if (!silent) {
         setIsSyncing(true);
       }
-      const synced = await syncData('recipes', recipes, currentUser.id);
+      const synced = await syncWithServer<Recipe>('recipes', recipes);
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(synced));
-      setRecipes(synced as Recipe[]);
+      setRecipes(synced);
       setLastSyncTime(Date.now());
     } catch (e) {
       console.error('RecipeContext sync failed:', e);

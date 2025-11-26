@@ -15,7 +15,7 @@ import * as FileSystem from 'expo-file-system';
 export default function ProductConversionsScreen() {
   const router = useRouter();
   const { isAdmin, isSuperAdmin } = useAuth();
-  const { products, productConversions, addProductConversion, importProductConversions, updateProductConversion, deleteProductConversion } = useStock();
+  const { products, productConversions, addProductConversion, importProductConversions, updateProductConversion, deleteProductConversion, clearAllConversions } = useStock();
   const [showConversionModal, setShowConversionModal] = useState<boolean>(false);
   const [editingConversion, setEditingConversion] = useState<ProductConversion | null>(null);
   const [conversionFromProductId, setConversionFromProductId] = useState<string>('');
@@ -195,13 +195,18 @@ export default function ProductConversionsScreen() {
       testID: 'confirm-clear-all-conversions',
       onConfirm: async () => {
         try {
-          const conversionIds = productConversions.map(c => c.id);
-          let deletedCount = 0;
-          for (const conversionId of conversionIds) {
-            await deleteProductConversion(conversionId);
-            deletedCount++;
+          if (typeof clearAllConversions === 'function') {
+            await clearAllConversions();
+            Alert.alert('Success', `Deleted all ${productConversions.length} product conversions.`);
+          } else {
+            const conversionIds = productConversions.map(c => c.id);
+            let deletedCount = 0;
+            for (const conversionId of conversionIds) {
+              await deleteProductConversion(conversionId);
+              deletedCount++;
+            }
+            Alert.alert('Success', `Deleted ${deletedCount} product conversions.`);
           }
-          Alert.alert('Success', `Deleted ${deletedCount} product conversions.`);
         } catch (error) {
           console.error('Clear all error:', error);
           Alert.alert('Error', 'Failed to delete some conversions.');
