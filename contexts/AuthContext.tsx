@@ -2,7 +2,7 @@ import createContextHook from '@nkzw/create-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { User, UserRole } from '@/types';
-import { syncData } from '@/utils/syncManager';
+import { syncWithServer } from '@/utils/trpcSyncManager';
 import { performDailyCleanup } from '@/utils/storageCleanup';
 
 const STORAGE_KEYS = {
@@ -171,9 +171,9 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     try {
       if (initialUsersSynced || syncInProgressRef.current) return;
       syncInProgressRef.current = true;
-      const synced = await syncData('users', users, undefined, { isDefaultAdminDevice: currentUser?.username === 'admin' && currentUser?.role === 'superadmin' });
+      const synced = await syncWithServer<User>('users', users);
       await AsyncStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(synced));
-      setUsers((synced as any[]).filter(u => !u?.deleted));
+      setUsers(synced.filter(u => !u.deleted));
       setLastSyncTime(Date.now());
       setInitialUsersSynced(true);
     } catch (error) {
@@ -181,7 +181,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     } finally {
       syncInProgressRef.current = false;
     }
-  }, [initialUsersSynced, users, currentUser]);
+  }, [initialUsersSynced, users]);
 
   useEffect(() => {
     if (!isLoading && !currentUser) {
@@ -236,18 +236,20 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       if (!silent) {
         setIsSyncing(true);
       }
+      console.log('[AuthContext] Starting tRPC sync...');
       const dataToSync = usersToSync || users;
-      const synced = await syncData('users', dataToSync, currentUser.id, { isDefaultAdminDevice: currentUser.username === 'admin' && currentUser.role === 'superadmin', forceDownload });
+      const synced = await syncWithServer<User>('users', dataToSync);
       await AsyncStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(synced));
-      setUsers((synced as any[]).filter(u => !u?.deleted));
-      if (currentUser && synced.find((u: User) => u.id === currentUser.id)) {
-        const updatedCurrentUser = synced.find((u: User) => u.id === currentUser.id);
+      setUsers(synced.filter(u => !u.deleted));
+      if (currentUser && synced.find(u => u.id === currentUser.id)) {
+        const updatedCurrentUser = synced.find(u => u.id === currentUser.id);
         if (updatedCurrentUser) {
           await AsyncStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(updatedCurrentUser));
           setCurrentUser(updatedCurrentUser);
         }
       }
       setLastSyncTime(Date.now());
+      console.log('[AuthContext] ✓ tRPC sync complete');
     } catch (error) {
       console.error('Sync users failed:', error);
       if (!silent) {
@@ -419,7 +421,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
       if (currentUser?.id) {
         try {
-          await syncData('users', finalUsers, currentUser.id, { isDefaultAdminDevice: currentUser.username === 'admin' && currentUser.role === 'superadmin' });
+          await syncWithServer<User>('users', finalUsers);
         } catch (syncError) {
           console.error('clearAllUsers: Sync failed', syncError);
         }

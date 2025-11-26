@@ -8,27 +8,38 @@ import { User, UserRole } from '@/types';
 export async function exportUsersToExcel(users: User[]): Promise<void> {
   console.log('=== USERS EXPORT START ===');
   console.log('Platform:', Platform.OS);
-  console.log('Users:', users.length);
+  console.log('Users count:', users.length);
   
   try {
     if (!users || users.length === 0) {
       throw new Error('No users to export');
     }
 
-    const usersData = users.map(user => ({
+    const userData = users.map(user => ({
       'Username': user.username,
       'Role': user.role,
-      'Created At': user.createdAt ? new Date(user.createdAt).toLocaleDateString() : '',
-      'Last Updated': user.updatedAt ? new Date(user.updatedAt).toLocaleDateString() : '',
+      'Created At': new Date(user.createdAt).toLocaleString(),
+      'Updated At': user.updatedAt ? new Date(user.updatedAt).toLocaleString() : '',
     }));
-    
-    console.log('Users data prepared:', usersData.length, 'rows');
+    console.log('User data prepared:', userData.length, 'rows');
+
+    const summaryData = [
+      { Field: 'Total Users', Value: users.length },
+      { Field: 'Super Admins', Value: users.filter(u => u.role === 'superadmin').length },
+      { Field: 'Admins', Value: users.filter(u => u.role === 'admin').length },
+      { Field: 'Users', Value: users.filter(u => u.role === 'user').length },
+      { Field: 'Report Generated', Value: new Date().toLocaleString() },
+    ];
 
     console.log('Creating workbook...');
     const wb = XLSX.utils.book_new();
     console.log('Workbook created');
     
-    const usersWs = XLSX.utils.json_to_sheet(usersData);
+    const summaryWs = XLSX.utils.json_to_sheet(summaryData);
+    XLSX.utils.book_append_sheet(wb, summaryWs, 'Summary');
+    console.log('Summary sheet added');
+    
+    const usersWs = XLSX.utils.json_to_sheet(userData);
     XLSX.utils.book_append_sheet(wb, usersWs, 'Users');
     console.log('Users sheet added');
 
@@ -64,7 +75,7 @@ export async function exportUsersToExcel(users: User[]): Promise<void> {
           console.log('Cleanup completed');
         }, 100);
         
-        console.log('=== WEB EXPORT COMPLETED ===');
+        console.log('=== WEB USERS EXPORT COMPLETED ===');
       } catch (webError) {
         console.error('Web export error:', webError);
         throw new Error(`Web export failed: ${webError instanceof Error ? webError.message : 'Unknown error'}`);
@@ -97,17 +108,17 @@ export async function exportUsersToExcel(users: User[]): Promise<void> {
         console.log('Starting share dialog...');
         await Sharing.shareAsync(fileUri, {
           mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          dialogTitle: 'Save Users List',
+          dialogTitle: 'Save Users Export',
           UTI: 'com.microsoft.excel.xlsx',
         });
-        console.log('=== MOBILE EXPORT COMPLETED ===');
+        console.log('=== MOBILE USERS EXPORT COMPLETED ===');
       } catch (mobileError) {
         console.error('Mobile export error:', mobileError);
         throw new Error(`Mobile export failed: ${mobileError instanceof Error ? mobileError.message : 'Unknown error'}`);
       }
     }
   } catch (error) {
-    console.error('=== EXPORT FAILED ===');
+    console.error('=== USERS EXPORT FAILED ===');
     console.error('Error:', error);
     if (error instanceof Error) {
       console.error('Error message:', error.message);
@@ -117,79 +128,57 @@ export async function exportUsersToExcel(users: User[]): Promise<void> {
   }
 }
 
-export interface ParsedUsersData {
-  users: Omit<User, 'id' | 'createdAt' | 'updatedAt'>[];
-  errors: string[];
-}
-
-export function parseUsersExcel(base64Data: string): ParsedUsersData {
-  const errors: string[] = [];
-  const users: Omit<User, 'id' | 'createdAt' | 'updatedAt'>[] = [];
-
+export async function parseUsersExcel(base64Data: string): Promise<{ data: Omit<User, 'id' | 'createdAt' | 'updatedAt'>[]; errors: string[] }> {
   try {
-    const workbook = XLSX.read(base64Data, { type: 'base64' });
+    const wb = XLSX.read(base64Data, { type: 'base64' });
+    const sheetName = wb.SheetNames.find(name => name === 'Users') || wb.SheetNames[0];
     
-    if (workbook.SheetNames.length === 0) {
-      errors.push('Excel file has no sheets');
-      return { users, errors };
+    if (!sheetName) {
+      return { data: [], errors: ['No sheet found in Excel file'] };
     }
-
-    const sheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[sheetName];
-    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
     
-    if (jsonData.length < 2) {
-      errors.push('No data rows found in Excel file');
-      return { users, errors };
-    }
-
-    const headers = jsonData[0].map((h: any) => String(h).toLowerCase().trim());
-    const usernameIndex = headers.findIndex((h: string) => h.includes('username') || h === 'name');
-    const roleIndex = headers.findIndex((h: string) => h.includes('role'));
-
-    if (usernameIndex === -1) {
-      errors.push('Missing required "Username" column');
-      return { users, errors };
-    }
-
-    if (roleIndex === -1) {
-      errors.push('Missing required "Role" column');
-      return { users, errors };
-    }
-
-    for (let i = 1; i < jsonData.length; i++) {
-      const row = jsonData[i];
-      const username = row[usernameIndex];
-      const roleValue = row[roleIndex];
+    const ws = wb.Sheets[sheetName];
+    const rawData: any[] = XLSX.utils.sheet_to_json(ws);
+    
+    const users: Omit<User, 'id' | 'createdAt' | 'updatedAt'>[] = [];
+    const errors: string[] = [];
+    
+    rawData.forEach((row, index) => {
+      const rowNum = index + 2;
       
-      if (!username || String(username).trim() === '') continue;
-      if (!roleValue || String(roleValue).trim() === '') continue;
-
-      const roleStr = String(roleValue).toLowerCase().trim();
-      let role: UserRole = 'user';
-      if (roleStr === 'admin') {
-        role = 'admin';
-      } else if (roleStr === 'superadmin' || roleStr === 'super admin') {
-        role = 'superadmin';
+      if (!row['Username'] || typeof row['Username'] !== 'string') {
+        errors.push(`Row ${rowNum}: Invalid or missing username`);
+        return;
       }
-
-      const user = {
-        username: String(username).trim(),
+      
+      if (!row['Role'] || typeof row['Role'] !== 'string') {
+        errors.push(`Row ${rowNum}: Invalid or missing role`);
+        return;
+      }
+      
+      const roleLower = row['Role'].toLowerCase().trim();
+      let role: UserRole;
+      if (roleLower === 'superadmin') {
+        role = 'superadmin';
+      } else if (roleLower === 'admin') {
+        role = 'admin';
+      } else if (roleLower === 'user') {
+        role = 'user';
+      } else {
+        errors.push(`Row ${rowNum}: Invalid role "${row['Role']}" (must be superadmin, admin, or user)`);
+        return;
+      }
+      
+      users.push({
+        username: row['Username'].trim(),
         role,
-      };
-
-      users.push(user);
-    }
-
-    if (users.length === 0) {
-      errors.push('No valid users found in Excel file');
-    }
-
+      });
+    });
+    
+    return { data: users, errors };
   } catch (error) {
-    errors.push(`Failed to parse Excel file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    return { data: [], errors: ['Failed to parse Excel file: ' + (error instanceof Error ? error.message : 'Unknown error')] };
   }
-
-  return { users, errors };
 }
 
 function base64ToBlob(base64: string, mimeType: string): Blob {

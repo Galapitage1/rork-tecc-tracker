@@ -8,28 +8,34 @@ import { Outlet } from '@/types';
 export async function exportOutletsToExcel(outlets: Outlet[]): Promise<void> {
   console.log('=== OUTLETS EXPORT START ===');
   console.log('Platform:', Platform.OS);
-  console.log('Outlets:', outlets.length);
+  console.log('Outlets count:', outlets.length);
   
   try {
     if (!outlets || outlets.length === 0) {
       throw new Error('No outlets to export');
     }
 
-    const outletsData = outlets.map(outlet => ({
-      'Outlet Name': outlet.name,
-      'Location': outlet.location || '',
-      'Outlet Type': outlet.outletType || '',
-      'Created At': outlet.createdAt ? new Date(outlet.createdAt).toLocaleDateString() : '',
-      'Last Updated': outlet.updatedAt ? new Date(outlet.updatedAt).toLocaleDateString() : '',
+    const outletData = outlets.map(outlet => ({
+      'Name': outlet.name,
+      'Created At': new Date(outlet.createdAt).toLocaleString(),
+      'Updated At': outlet.updatedAt ? new Date(outlet.updatedAt).toLocaleString() : '',
     }));
-    
-    console.log('Outlets data prepared:', outletsData.length, 'rows');
+    console.log('Outlet data prepared:', outletData.length, 'rows');
+
+    const summaryData = [
+      { Field: 'Total Outlets', Value: outlets.length },
+      { Field: 'Report Generated', Value: new Date().toLocaleString() },
+    ];
 
     console.log('Creating workbook...');
     const wb = XLSX.utils.book_new();
     console.log('Workbook created');
     
-    const outletsWs = XLSX.utils.json_to_sheet(outletsData);
+    const summaryWs = XLSX.utils.json_to_sheet(summaryData);
+    XLSX.utils.book_append_sheet(wb, summaryWs, 'Summary');
+    console.log('Summary sheet added');
+    
+    const outletsWs = XLSX.utils.json_to_sheet(outletData);
     XLSX.utils.book_append_sheet(wb, outletsWs, 'Outlets');
     console.log('Outlets sheet added');
 
@@ -65,7 +71,7 @@ export async function exportOutletsToExcel(outlets: Outlet[]): Promise<void> {
           console.log('Cleanup completed');
         }, 100);
         
-        console.log('=== WEB EXPORT COMPLETED ===');
+        console.log('=== WEB OUTLETS EXPORT COMPLETED ===');
       } catch (webError) {
         console.error('Web export error:', webError);
         throw new Error(`Web export failed: ${webError instanceof Error ? webError.message : 'Unknown error'}`);
@@ -98,17 +104,17 @@ export async function exportOutletsToExcel(outlets: Outlet[]): Promise<void> {
         console.log('Starting share dialog...');
         await Sharing.shareAsync(fileUri, {
           mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          dialogTitle: 'Save Outlets List',
+          dialogTitle: 'Save Outlets Export',
           UTI: 'com.microsoft.excel.xlsx',
         });
-        console.log('=== MOBILE EXPORT COMPLETED ===');
+        console.log('=== MOBILE OUTLETS EXPORT COMPLETED ===');
       } catch (mobileError) {
         console.error('Mobile export error:', mobileError);
         throw new Error(`Mobile export failed: ${mobileError instanceof Error ? mobileError.message : 'Unknown error'}`);
       }
     }
   } catch (error) {
-    console.error('=== EXPORT FAILED ===');
+    console.error('=== OUTLETS EXPORT FAILED ===');
     console.error('Error:', error);
     if (error instanceof Error) {
       console.error('Error message:', error.message);
@@ -118,74 +124,38 @@ export async function exportOutletsToExcel(outlets: Outlet[]): Promise<void> {
   }
 }
 
-export interface ParsedOutletsData {
-  outlets: Omit<Outlet, 'id' | 'createdAt' | 'updatedAt'>[];
-  errors: string[];
-}
-
-export function parseOutletsExcel(base64Data: string): ParsedOutletsData {
-  const errors: string[] = [];
-  const outlets: Omit<Outlet, 'id' | 'createdAt' | 'updatedAt'>[] = [];
-
+export async function parseOutletsExcel(base64Data: string): Promise<{ data: { name: string }[]; errors: string[] }> {
   try {
-    const workbook = XLSX.read(base64Data, { type: 'base64' });
+    const wb = XLSX.read(base64Data, { type: 'base64' });
+    const sheetName = wb.SheetNames.find(name => name === 'Outlets') || wb.SheetNames[0];
     
-    if (workbook.SheetNames.length === 0) {
-      errors.push('Excel file has no sheets');
-      return { outlets, errors };
+    if (!sheetName) {
+      return { data: [], errors: ['No sheet found in Excel file'] };
     }
-
-    const sheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[sheetName];
-    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
     
-    if (jsonData.length < 2) {
-      errors.push('No data rows found in Excel file');
-      return { outlets, errors };
-    }
-
-    const headers = jsonData[0].map((h: any) => String(h).toLowerCase().trim());
-    const nameIndex = headers.findIndex((h: string) => h.includes('outlet') && h.includes('name') || h === 'name');
-    const locationIndex = headers.findIndex((h: string) => h.includes('location'));
-    const typeIndex = headers.findIndex((h: string) => h.includes('type') && (h.includes('outlet') || !h.includes('product')));
-
-    if (nameIndex === -1) {
-      errors.push('Missing required "Outlet Name" column');
-      return { outlets, errors };
-    }
-
-    for (let i = 1; i < jsonData.length; i++) {
-      const row = jsonData[i];
-      const name = row[nameIndex];
+    const ws = wb.Sheets[sheetName];
+    const rawData: any[] = XLSX.utils.sheet_to_json(ws);
+    
+    const outlets: { name: string }[] = [];
+    const errors: string[] = [];
+    
+    rawData.forEach((row, index) => {
+      const rowNum = index + 2;
       
-      if (!name || String(name).trim() === '') continue;
-
-      const location = locationIndex !== -1 && row[locationIndex] ? String(row[locationIndex]).trim() : '';
-      const typeValue = typeIndex !== -1 && row[typeIndex] ? String(row[typeIndex]).toLowerCase().trim() : 'sales';
-      
-      let outletType: 'sales' | 'production' = 'sales';
-      if (typeValue === 'production') {
-        outletType = 'production';
+      if (!row['Name'] || typeof row['Name'] !== 'string') {
+        errors.push(`Row ${rowNum}: Invalid or missing name`);
+        return;
       }
-
-      const outlet = {
-        name: String(name).trim(),
-        location,
-        outletType,
-      };
-
-      outlets.push(outlet);
-    }
-
-    if (outlets.length === 0) {
-      errors.push('No valid outlets found in Excel file');
-    }
-
+      
+      outlets.push({
+        name: row['Name'].trim(),
+      });
+    });
+    
+    return { data: outlets, errors };
   } catch (error) {
-    errors.push(`Failed to parse Excel file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    return { data: [], errors: ['Failed to parse Excel file: ' + (error instanceof Error ? error.message : 'Unknown error')] };
   }
-
-  return { outlets, errors };
 }
 
 function base64ToBlob(base64: string, mimeType: string): Blob {

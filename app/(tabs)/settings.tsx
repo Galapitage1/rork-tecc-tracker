@@ -727,7 +727,7 @@ export default function SettingsScreen() {
                               fileContent = await FileSystem.readAsStringAsync(fileUri, { encoding: FileSystem.EncodingType.Base64 });
                             }
                             const base64 = fileContent.split(',')[1] || fileContent;
-                            const { users: parsedUsers, errors } = parseUsersExcel(base64);
+                            const { data: parsedUsers, errors } = await parseUsersExcel(base64);
                             if (errors.length > 0) {
                               Alert.alert('Error', errors.join('\n'));
                               return;
@@ -875,7 +875,7 @@ export default function SettingsScreen() {
                               fileContent = await FileSystem.readAsStringAsync(fileUri, { encoding: FileSystem.EncodingType.Base64 });
                             }
                             const base64 = fileContent.split(',')[1] || fileContent;
-                            const { outlets: parsedOutlets, errors } = parseOutletsExcel(base64);
+                            const { data: parsedOutlets, errors } = await parseOutletsExcel(base64);
                             if (errors.length > 0) {
                               Alert.alert('Error', errors.join('\n'));
                               return;
@@ -884,7 +884,7 @@ export default function SettingsScreen() {
                               Alert.alert('No Data', 'No valid outlets found in the Excel file');
                               return;
                             }
-                            const outletsToImport = parsedOutlets.map((outlet, i) => ({
+                            const outletsToImport = parsedOutlets.map((outlet: { name: string }, i: number) => ({
                               id: `outlet-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${i}`,
                               ...outlet,
                               createdAt: Date.now(),
