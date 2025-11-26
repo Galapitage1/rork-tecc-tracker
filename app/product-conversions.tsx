@@ -320,28 +320,21 @@ export default function ProductConversionsScreen() {
         return;
       }
 
-      let imported = 0;
-      let failed = 0;
-
-      for (const conversion of parsedConversions) {
-        try {
+      try {
+        for (const conversion of parsedConversions) {
           await addProductConversion(conversion);
-          imported++;
-        } catch (error) {
-          console.error('Error adding conversion:', error);
-          failed++;
         }
-      }
 
-      let message = `Import complete:\n• Imported: ${imported}`;
-      if (failed > 0) {
-        message += `\n• Failed: ${failed}`;
-      }
-      if (parseErrors.length > 0) {
-        message += `\n• Warnings: ${parseErrors.length}`;
-      }
+        let message = `Import complete:\n• Imported: ${parsedConversions.length}`;
+        if (parseErrors.length > 0) {
+          message += `\n• Warnings: ${parseErrors.length}`;
+        }
 
-      Alert.alert('Import Complete', message);
+        Alert.alert('Import Complete', message);
+      } catch (error) {
+        console.error('Error adding conversions:', error);
+        Alert.alert('Error', `Failed to import conversions: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
     } catch (error) {
       console.error('Import error:', error);
       Alert.alert('Error', `Failed to import conversions: ${error instanceof Error ? error.message : 'Unknown error'}`);
