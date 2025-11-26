@@ -46,6 +46,7 @@ type StockContextType = {
   deleteRequest: (requestId: string) => Promise<void>;
   updateRequest: (requestId: string, updates: Partial<ProductRequest>) => Promise<void>;
   addRequestsToDate: (date: string, newRequests: ProductRequest[]) => Promise<void>;
+  importOutlets: (newOutlets: Outlet[]) => Promise<number>;
   addOutlet: (outlet: Outlet) => Promise<void>;
   updateOutlet: (outletId: string, updates: Partial<Outlet>) => Promise<void>;
   deleteOutlet: (outletId: string) => Promise<void>;
@@ -233,6 +234,18 @@ export function StockProvider({ children, currentUser }: { children: ReactNode; 
     await AsyncStorage.setItem(STORAGE_KEYS.REQUESTS, JSON.stringify(updated));
     setRequests(updated);
   }, [requests]);
+
+  const importOutlets = useCallback(async (newOutlets: Outlet[]): Promise<number> => {
+    console.log('[importOutlets] Starting import of', newOutlets.length, 'outlets');
+    const existingNames = new Set(outlets.map(o => o.name.toLowerCase().trim()));
+    const uniqueOutlets = newOutlets.filter(o => !existingNames.has(o.name.toLowerCase().trim()));
+    console.log('[importOutlets] Unique outlets to add:', uniqueOutlets.length);
+    const updated = [...outlets, ...uniqueOutlets];
+    await AsyncStorage.setItem(STORAGE_KEYS.OUTLETS, JSON.stringify(updated));
+    setOutlets(updated);
+    console.log('[importOutlets] Import complete');
+    return uniqueOutlets.length;
+  }, [outlets]);
 
   const addOutlet = useCallback(async (outlet: Outlet) => {
     const outletWithTimestamp = { ...outlet, updatedAt: Date.now() };
@@ -520,6 +533,7 @@ export function StockProvider({ children, currentUser }: { children: ReactNode; 
     deleteRequest,
     updateRequest,
     addRequestsToDate,
+    importOutlets,
     addOutlet,
     updateOutlet,
     deleteOutlet,
@@ -577,6 +591,7 @@ export function StockProvider({ children, currentUser }: { children: ReactNode; 
     deleteRequest,
     updateRequest,
     addRequestsToDate,
+    importOutlets,
     addOutlet,
     updateOutlet,
     deleteOutlet,

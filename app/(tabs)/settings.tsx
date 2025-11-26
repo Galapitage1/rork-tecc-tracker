@@ -34,7 +34,7 @@ import { CURRENCIES } from '@/utils/currencyHelper';
 const CAMPAIGN_SETTINGS_KEY = '@campaign_settings';
 
 export default function SettingsScreen() {
-  const { products, outlets, productConversions, addProduct, updateProduct, deleteProduct, addOutlet, updateOutlet, deleteOutlet, addProductConversion, updateProductConversion, deleteProductConversion, clearAllProducts, clearAllOutlets, deleteUserStockChecks, isLoading, isSyncing: isStockSyncing, lastSyncTime: stockLastSync, syncAll, isSyncPaused, toggleSyncPause, viewMode, setViewMode } = useStock();
+  const { products, outlets, productConversions, addProduct, updateProduct, deleteProduct, importOutlets, addOutlet, updateOutlet, deleteOutlet, addProductConversion, updateProductConversion, deleteProductConversion, clearAllProducts, clearAllOutlets, deleteUserStockChecks, isLoading, isSyncing: isStockSyncing, lastSyncTime: stockLastSync, syncAll, isSyncPaused, toggleSyncPause, viewMode, setViewMode } = useStock();
 
   const { currentUser, users, logout, addUser, updateUser, deleteUser, isSyncing: isUserSyncing, lastSyncTime: userLastSync, syncUsers, clearAllUsers, isSuperAdmin, showPageTabs, toggleShowPageTabs, currency, updateCurrency, importUsers } = useAuth();
   const { isSyncing: isCustomerSyncing, lastSyncTime: customerLastSync, syncCustomers } = useCustomers();
@@ -880,17 +880,18 @@ export default function SettingsScreen() {
                               Alert.alert('Error', errors.join('\n'));
                               return;
                             }
-                            for (let i = 0; i < parsedOutlets.length; i++) {
-                              const outlet = parsedOutlets[i];
-                              await addOutlet({
-                                id: `outlet-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${i}`,
-                                ...outlet,
-                                createdAt: Date.now(),
-                                updatedAt: Date.now(),
-                              });
-                              await new Promise(resolve => setTimeout(resolve, 50));
+                            if (parsedOutlets.length === 0) {
+                              Alert.alert('No Data', 'No valid outlets found in the Excel file');
+                              return;
                             }
-                            Alert.alert('Success', `Imported ${parsedOutlets.length} outlets successfully`);
+                            const outletsToImport = parsedOutlets.map((outlet, i) => ({
+                              id: `outlet-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${i}`,
+                              ...outlet,
+                              createdAt: Date.now(),
+                              updatedAt: Date.now(),
+                            }));
+                            const importedCount = await importOutlets(outletsToImport);
+                            Alert.alert('Success', `Imported ${importedCount} new outlet(s)${importedCount !== parsedOutlets.length ? ` (${parsedOutlets.length - importedCount} duplicate(s) skipped)` : ''} successfully`);
                           }
                         } catch (error) {
                           Alert.alert('Error', 'Failed to import outlets');
