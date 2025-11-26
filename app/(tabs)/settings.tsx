@@ -21,6 +21,8 @@ import { syncData, overrideSyncData } from '@/utils/syncManager';
 import { useRecipes } from '@/contexts/RecipeContext';
 import { useProductUsage } from '@/contexts/ProductUsageContext';
 import { exportBinIds, importBinIds } from '@/utils/syncManager';
+import { exportUsersToExcel, parseUsersExcel } from '@/utils/usersExporter';
+import { exportOutletsToExcel, parseOutletsExcel } from '@/utils/outletsExporter';
 import { Outlet, Product, ProductType, UserRole, ProductConversion } from '@/types';
 import { hasPermission } from '@/utils/permissions';
 import { parseExcelFile, generateSampleExcelBase64 } from '@/utils/excelParser';
@@ -34,7 +36,7 @@ const CAMPAIGN_SETTINGS_KEY = '@campaign_settings';
 export default function SettingsScreen() {
   const { products, outlets, productConversions, addProduct, updateProduct, deleteProduct, addOutlet, updateOutlet, deleteOutlet, addProductConversion, updateProductConversion, deleteProductConversion, clearAllProducts, clearAllOutlets, deleteUserStockChecks, isLoading, isSyncing: isStockSyncing, lastSyncTime: stockLastSync, syncAll, isSyncPaused, toggleSyncPause, viewMode, setViewMode } = useStock();
 
-  const { currentUser, users, logout, addUser, updateUser, deleteUser, isSyncing: isUserSyncing, lastSyncTime: userLastSync, syncUsers, clearAllUsers, isSuperAdmin, showPageTabs, toggleShowPageTabs, currency, updateCurrency } = useAuth();
+  const { currentUser, users, logout, addUser, updateUser, deleteUser, isSyncing: isUserSyncing, lastSyncTime: userLastSync, syncUsers, clearAllUsers, isSuperAdmin, showPageTabs, toggleShowPageTabs, currency, updateCurrency, importUsers } = useAuth();
   const { isSyncing: isCustomerSyncing, lastSyncTime: customerLastSync, syncCustomers } = useCustomers();
   const { isSyncing: isRecipeSyncing, lastSyncTime: recipeLastSync, syncRecipes } = useRecipes();
   const { isSyncing: isOrderSyncing, lastSyncTime: orderLastSync, syncOrders } = useOrders();
@@ -675,18 +677,74 @@ export default function SettingsScreen() {
               ))}
 
               {hasPermission(currentUser?.role, 'manageUsers') && (
-                <TouchableOpacity
-                  style={[styles.button, styles.primaryButton]}
-                  onPress={() => {
-                    setEditingUser(null);
-                    setNewUsername('');
-                    setNewUserRole('user');
-                    setShowUserModal(true);
-                  }}
-                >
-                  <Plus size={20} color={Colors.light.card} />
-                  <Text style={styles.buttonText}>Add User</Text>
-                </TouchableOpacity>
+                <>
+                  <TouchableOpacity
+                    style={[styles.button, styles.primaryButton]}
+                    onPress={() => {
+                      setEditingUser(null);
+                      setNewUsername('');
+                      setNewUserRole('user');
+                      setShowUserModal(true);
+                    }}
+                  >
+                    <Plus size={20} color={Colors.light.card} />
+                    <Text style={styles.buttonText}>Add User</Text>
+                  </TouchableOpacity>
+
+                  <View style={{ flexDirection: 'row', gap: 12 }}>
+                    <TouchableOpacity
+                      style={[styles.button, styles.secondaryButton, { flex: 1 }]}
+                      onPress={async () => {
+                        try {
+                          await exportUsersToExcel(users);
+                          Alert.alert('Success', 'Users exported successfully');
+                        } catch (error) {
+                          Alert.alert('Error', 'Failed to export users');
+                        }
+                      }}
+                    >
+                      <Download size={20} color={Colors.light.tint} />
+                      <Text style={[styles.buttonText, styles.secondaryButtonText]}>Export Excel</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.button, styles.secondaryButton, { flex: 1 }]}
+                      onPress={async () => {
+                        try {
+                          const result = await DocumentPicker.getDocumentAsync({ type: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel'] });
+                          if (result.assets && result.assets.length > 0) {
+                            const fileUri = result.assets[0].uri;
+                            let fileContent: string;
+                            if (Platform.OS === 'web') {
+                              const response = await fetch(fileUri);
+                              const blob = await response.blob();
+                              fileContent = await new Promise((resolve) => {
+                                const reader = new FileReader();
+                                reader.onloadend = () => resolve(reader.result as string);
+                                reader.readAsDataURL(blob);
+                              });
+                            } else {
+                              fileContent = await FileSystem.readAsStringAsync(fileUri, { encoding: FileSystem.EncodingType.Base64 });
+                            }
+                            const base64 = fileContent.split(',')[1] || fileContent;
+                            const { users: parsedUsers, errors } = parseUsersExcel(base64);
+                            if (errors.length > 0) {
+                              Alert.alert('Error', errors.join('\n'));
+                              return;
+                            }
+                            const { added, updated } = await currentUser?.username && importUsers ? await importUsers(parsedUsers) : { added: 0, updated: 0 };
+                            Alert.alert('Success', `Imported: ${added} new users, Updated: ${updated} existing users`);
+                          }
+                        } catch (error) {
+                          Alert.alert('Error', 'Failed to import users');
+                        }
+                      }}
+                    >
+                      <Upload size={20} color={Colors.light.tint} />
+                      <Text style={[styles.buttonText, styles.secondaryButtonText]}>Import Excel</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
               )}
             </>
           )}
@@ -766,19 +824,82 @@ export default function SettingsScreen() {
               ))}
 
               {hasPermission(currentUser?.role, 'manageOutlets') && (
-                <TouchableOpacity
-                  style={[styles.button, styles.primaryButton]}
-                  onPress={() => {
-                    setEditingOutlet(null);
-                    setOutletName('');
-                    setOutletLocation('');
-                    setOutletType('sales');
-                    setShowOutletModal(true);
-                  }}
-                >
-                  <Plus size={20} color={Colors.light.card} />
-                  <Text style={styles.buttonText}>Add Outlet</Text>
-                </TouchableOpacity>
+                <>
+                  <TouchableOpacity
+                    style={[styles.button, styles.primaryButton]}
+                    onPress={() => {
+                      setEditingOutlet(null);
+                      setOutletName('');
+                      setOutletLocation('');
+                      setOutletType('sales');
+                      setShowOutletModal(true);
+                    }}
+                  >
+                    <Plus size={20} color={Colors.light.card} />
+                    <Text style={styles.buttonText}>Add Outlet</Text>
+                  </TouchableOpacity>
+
+                  <View style={{ flexDirection: 'row', gap: 12 }}>
+                    <TouchableOpacity
+                      style={[styles.button, styles.secondaryButton, { flex: 1 }]}
+                      onPress={async () => {
+                        try {
+                          await exportOutletsToExcel(outlets);
+                          Alert.alert('Success', 'Outlets exported successfully');
+                        } catch (error) {
+                          Alert.alert('Error', 'Failed to export outlets');
+                        }
+                      }}
+                    >
+                      <Download size={20} color={Colors.light.tint} />
+                      <Text style={[styles.buttonText, styles.secondaryButtonText]}>Export Excel</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.button, styles.secondaryButton, { flex: 1 }]}
+                      onPress={async () => {
+                        try {
+                          const result = await DocumentPicker.getDocumentAsync({ type: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel'] });
+                          if (result.assets && result.assets.length > 0) {
+                            const fileUri = result.assets[0].uri;
+                            let fileContent: string;
+                            if (Platform.OS === 'web') {
+                              const response = await fetch(fileUri);
+                              const blob = await response.blob();
+                              fileContent = await new Promise((resolve) => {
+                                const reader = new FileReader();
+                                reader.onloadend = () => resolve(reader.result as string);
+                                reader.readAsDataURL(blob);
+                              });
+                            } else {
+                              fileContent = await FileSystem.readAsStringAsync(fileUri, { encoding: FileSystem.EncodingType.Base64 });
+                            }
+                            const base64 = fileContent.split(',')[1] || fileContent;
+                            const { outlets: parsedOutlets, errors } = parseOutletsExcel(base64);
+                            if (errors.length > 0) {
+                              Alert.alert('Error', errors.join('\n'));
+                              return;
+                            }
+                            for (const outlet of parsedOutlets) {
+                              await addOutlet({
+                                id: `outlet-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                                ...outlet,
+                                createdAt: Date.now(),
+                                updatedAt: Date.now(),
+                              });
+                            }
+                            Alert.alert('Success', `Imported ${parsedOutlets.length} outlets successfully`);
+                          }
+                        } catch (error) {
+                          Alert.alert('Error', 'Failed to import outlets');
+                        }
+                      }}
+                    >
+                      <Upload size={20} color={Colors.light.tint} />
+                      <Text style={[styles.buttonText, styles.secondaryButtonText]}>Import Excel</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
               )}
             </>
           )}

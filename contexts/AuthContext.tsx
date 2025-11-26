@@ -456,6 +456,57 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     }
   }, []);
 
+  const importUsers = useCallback(async (newUsers: Omit<User, 'id' | 'createdAt' | 'updatedAt'>[]) => {
+    const existingUsersMap = new Map(
+      users.map(u => [u.username.toLowerCase(), u])
+    );
+    
+    const usersToAdd: User[] = [];
+    let updatedCount = 0;
+    let addedCount = 0;
+    
+    let updatedExistingUsers = [...users];
+    
+    newUsers.forEach(newUser => {
+      const key = newUser.username.toLowerCase();
+      const existingUser = existingUsersMap.get(key);
+      
+      if (existingUser) {
+        console.log(`[AuthContext] Updating existing user: "${newUser.username}" (${existingUser.role} → ${newUser.role})`);
+        updatedExistingUsers = updatedExistingUsers.map(u =>
+          u.id === existingUser.id
+            ? { ...u, role: newUser.role, updatedAt: Date.now() }
+            : u
+        );
+        updatedCount++;
+        return;
+      }
+      
+      const fullUser: User = {
+        id: `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${addedCount}`,
+        ...newUser,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      
+      usersToAdd.push(fullUser);
+      addedCount++;
+    });
+    
+    const finalUsers = [...updatedExistingUsers, ...usersToAdd];
+    
+    await AsyncStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(finalUsers));
+    setUsers(finalUsers.filter(u => !u.deleted));
+
+    try {
+      await syncUsers(finalUsers);
+    } catch (e) {
+      console.log('[AuthContext] Import sync failed, will retry later');
+    }
+
+    return { added: addedCount, updated: updatedCount };
+  }, [users, syncUsers]);
+
   return useMemo(() => ({
     currentUser,
     users,
@@ -478,6 +529,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     toggleShowPageTabs,
     currency,
     updateCurrency,
+    importUsers,
   }), [
     currentUser,
     users,
@@ -499,5 +551,6 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     toggleShowPageTabs,
     currency,
     updateCurrency,
+    importUsers,
   ]);
 });
