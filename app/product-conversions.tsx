@@ -7,10 +7,14 @@ import { Plus, Edit2, Trash2, X, ArrowLeft, Download, Upload, Search } from 'luc
 import Colors from '@/constants/colors';
 import { ProductConversion } from '@/types';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { exportConversionsToExcel } from '@/utils/conversionsExporter';
+import { parseConversionsExcel } from '@/utils/conversionsParser';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
 
 export default function ProductConversionsScreen() {
   const router = useRouter();
-  const { currentUser, isAdmin, isSuperAdmin } = useAuth();
+  const { isAdmin, isSuperAdmin } = useAuth();
   const { products, productConversions, addProductConversion, updateProductConversion, deleteProductConversion } = useStock();
   const [showConversionModal, setShowConversionModal] = useState<boolean>(false);
   const [editingConversion, setEditingConversion] = useState<ProductConversion | null>(null);
@@ -145,7 +149,7 @@ export default function ProductConversionsScreen() {
         Alert.alert('Success', 'Product conversion added successfully.');
         resetConversionForm();
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Failed to save product conversion.');
     }
   };
@@ -178,116 +182,118 @@ export default function ProductConversionsScreen() {
     });
   };
 
-  const handleExportConversions = () => {
+  const handleExportConversions = async () => {
     if (productConversions.length === 0) {
       Alert.alert('No Data', 'There are no product conversions to export.');
       return;
     }
 
-    const exportData = {
-      version: 1,
-      exportDate: new Date().toISOString(),
-      conversions: productConversions.map(conversion => ({
-        id: conversion.id,
-        fromProductId: conversion.fromProductId,
-        toProductId: conversion.toProductId,
-        conversionFactor: conversion.conversionFactor,
-        createdAt: conversion.createdAt,
-        fromProductName: products.find(p => p.id === conversion.fromProductId)?.name || 'Unknown',
-        fromProductUnit: products.find(p => p.id === conversion.fromProductId)?.unit || 'Unknown',
-        toProductName: products.find(p => p.id === conversion.toProductId)?.name || 'Unknown',
-        toProductUnit: products.find(p => p.id === conversion.toProductId)?.unit || 'Unknown',
-      })),
-    };
-
-    const jsonString = JSON.stringify(exportData, null, 2);
-    const blob = new Blob([jsonString], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `product-conversions-${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-
-    Alert.alert('Success', `Exported ${productConversions.length} product conversions.`);
+    try {
+      await exportConversionsToExcel(productConversions, products);
+      Alert.alert('Success', `Exported ${productConversions.length} product conversions.`);
+    } catch (error) {
+      console.error('Export error:', error);
+      Alert.alert('Error', `Failed to export conversions: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   };
 
-  const handleImportConversions = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
-    input.onchange = async (e: any) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
+  const handleImportConversions = async () => {
+    try {
+      let base64Data: string = '';
+      
+      if (Platform.OS === 'web') {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.xlsx,.xls';
+        
+        await new Promise<void>((resolve, reject) => {
+          input.onchange = async (e: any) => {
+            const file = e.target.files?.[0];
+            if (!file) {
+              reject(new Error('No file selected'));
+              return;
+            }
 
-      try {
-        const text = await file.text();
-        const data = JSON.parse(text);
+            try {
+              const arrayBuffer = await file.arrayBuffer();
+              const bytes = new Uint8Array(arrayBuffer);
+              let binary = '';
+              for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+              }
+              base64Data = btoa(binary);
+              resolve();
+            } catch (err) {
+              reject(err);
+            }
+          };
+          input.click();
+        });
+      } else {
+        const result = await DocumentPicker.getDocumentAsync({
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          copyToCacheDirectory: true,
+        });
 
-        if (!data.conversions || !Array.isArray(data.conversions)) {
-          Alert.alert('Error', 'Invalid file format. Please select a valid product conversions export file.');
+        if (result.canceled || !result.assets?.[0]?.uri) {
           return;
         }
 
-        let imported = 0;
-        let skipped = 0;
-        let errors = 0;
-
-        for (const conversionData of data.conversions) {
-          try {
-            const fromProduct = products.find(p => 
-              (p.id === conversionData.fromProductId) || 
-              (p.name.toLowerCase() === conversionData.fromProductName?.toLowerCase() && p.unit === conversionData.fromProductUnit)
-            );
-            const toProduct = products.find(p => 
-              (p.id === conversionData.toProductId) || 
-              (p.name.toLowerCase() === conversionData.toProductName?.toLowerCase() && p.unit === conversionData.toProductUnit)
-            );
-
-            if (!fromProduct || !toProduct) {
-              skipped++;
-              console.log('Skipped conversion - products not found:', conversionData);
-              continue;
-            }
-
-            const existingConversion = productConversions.find(c => 
-              c.fromProductId === fromProduct.id && c.toProductId === toProduct.id
-            );
-
-            if (existingConversion) {
-              skipped++;
-              continue;
-            }
-
-            const newConversion: ProductConversion = {
-              id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-              fromProductId: fromProduct.id,
-              toProductId: toProduct.id,
-              conversionFactor: conversionData.conversionFactor,
-              createdAt: Date.now(),
-            };
-
-            await addProductConversion(newConversion);
-            imported++;
-          } catch (error) {
-            console.error('Error importing conversion:', error);
-            errors++;
-          }
-        }
-
-        let message = `Import complete:\n• Imported: ${imported}\n• Skipped: ${skipped}`;
-        if (errors > 0) {
-          message += `\n• Errors: ${errors}`;
-        }
-        Alert.alert('Import Complete', message);
-      } catch (error) {
-        console.error('Error importing conversions:', error);
-        Alert.alert('Error', 'Failed to import product conversions. Please check the file format.');
+        base64Data = await FileSystem.readAsStringAsync(result.assets[0].uri, {
+          encoding: 'base64',
+        });
       }
-    };
-    input.click();
+
+      if (!base64Data) {
+        return;
+      }
+
+      const { conversions: parsedConversions, errors: parseErrors } = parseConversionsExcel(
+        base64Data,
+        products,
+        productConversions
+      );
+
+      if (parseErrors.length > 0) {
+        console.warn('Parse errors:', parseErrors);
+      }
+
+      if (parsedConversions.length === 0) {
+        Alert.alert(
+          'Import Complete',
+          parseErrors.length > 0 
+            ? `No conversions imported:\n${parseErrors.join('\n')}`
+            : 'No new conversions found in the file.'
+        );
+        return;
+      }
+
+      let imported = 0;
+      let failed = 0;
+
+      for (const conversion of parsedConversions) {
+        try {
+          await addProductConversion(conversion);
+          imported++;
+        } catch (error) {
+          console.error('Error adding conversion:', error);
+          failed++;
+        }
+      }
+
+      let message = `Import complete:\n• Imported: ${imported}`;
+      if (failed > 0) {
+        message += `\n• Failed: ${failed}`;
+      }
+      if (parseErrors.length > 0) {
+        message += `\n• Warnings: ${parseErrors.length}`;
+      }
+
+      Alert.alert('Import Complete', message);
+    } catch (error) {
+      console.error('Import error:', error);
+      Alert.alert('Error', `Failed to import conversions: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   };
 
   return (
