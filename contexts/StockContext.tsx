@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useState, useEffect, useCallback, useMemo, useRef, ReactNode, createContext, useContext } from 'react';
 import { Product, StockCheck, StockCount, ProductRequest, Outlet, ProductConversion, InventoryStock, SalesDeduction, SalesReconciliationHistory } from '@/types';
-import { fullSync } from '@/utils/newSyncManager';
+import { syncWithServer } from '@/utils/trpcSyncManager';
 
 const STORAGE_KEYS = {
   PRODUCTS: '@stock_app_products',
@@ -441,13 +441,15 @@ export function StockProvider({ children, currentUser }: { children: ReactNode; 
       syncInProgressRef.current = true;
       if (!silent) setIsSyncing(true);
 
+      console.log('[StockContext] Starting tRPC sync...');
+
       const [syncedProducts, syncedStockChecks, syncedRequests, syncedOutlets, syncedConversions, syncedInventory] = await Promise.all([
-        fullSync<Product>('products', products),
-        fullSync<StockCheck>('stock_checks', stockChecks),
-        fullSync<ProductRequest>('requests', requests),
-        fullSync<Outlet>('outlets', outlets),
-        fullSync<ProductConversion>('product_conversions', productConversions),
-        fullSync<InventoryStock>('inventory_stocks', inventoryStocks),
+        syncWithServer<Product>('products', products),
+        syncWithServer<StockCheck>('stock_checks', stockChecks),
+        syncWithServer<ProductRequest>('requests', requests),
+        syncWithServer<Outlet>('outlets', outlets),
+        syncWithServer<ProductConversion>('product_conversions', productConversions),
+        syncWithServer<InventoryStock>('inventory_stocks', inventoryStocks),
       ]);
 
       await Promise.all([
@@ -466,6 +468,8 @@ export function StockProvider({ children, currentUser }: { children: ReactNode; 
       setProductConversions(syncedConversions);
       setInventoryStocks(syncedInventory);
       setLastSyncTime(Date.now());
+      
+      console.log('[StockContext] ✓ tRPC sync complete');
     } catch (error) {
       console.error('StockContext syncAll failed:', error);
       if (!silent) throw error;

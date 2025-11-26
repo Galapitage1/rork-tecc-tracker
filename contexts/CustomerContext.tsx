@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef, ReactNode, createContext, useContext } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Customer } from '@/types';
-import { fullSync } from '@/utils/newSyncManager';
+import { syncWithServer } from '@/utils/trpcSyncManager';
 
 const CUSTOMERS_KEY = 'customers';
 
@@ -162,13 +162,16 @@ export function CustomerProvider({ children, currentUser }: { children: ReactNod
       if (!silent) {
         setIsSyncing(true);
       }
+      
+      console.log('[CustomerContext] Starting tRPC sync...');
       const allCustomers = await AsyncStorage.getItem(CUSTOMERS_KEY);
       const customersToSync: Customer[] = allCustomers ? JSON.parse(allCustomers) : customers;
-      const synced = await fullSync<Customer>('customers', customersToSync);
+      const synced = await syncWithServer<Customer>('customers', customersToSync);
       await AsyncStorage.setItem(CUSTOMERS_KEY, JSON.stringify(synced));
       const activeCustomers = synced.filter(customer => customer.deleted !== true);
       setCustomers(activeCustomers);
       setLastSyncTime(Date.now());
+      console.log('[CustomerContext] ✓ tRPC sync complete');
     } catch (error) {
       console.error('CustomerContext syncCustomers: Failed:', error);
       if (!silent) {
