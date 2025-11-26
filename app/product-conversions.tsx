@@ -3,7 +3,7 @@ import { useRouter, Stack } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStock } from '@/contexts/StockContext';
 import { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, X, ArrowLeft, Download, Upload, Search } from 'lucide-react-native';
+import { Plus, Edit2, Trash2, X, ArrowLeft, Download, Upload, Search, Trash } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { ProductConversion } from '@/types';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -182,6 +182,33 @@ export default function ProductConversionsScreen() {
     });
   };
 
+  const handleClearAllConversions = () => {
+    if (productConversions.length === 0) {
+      Alert.alert('No Data', 'There are no product conversions to delete.');
+      return;
+    }
+
+    openConfirm({
+      title: 'Clear All Conversions',
+      message: `Are you sure you want to delete all ${productConversions.length} product conversions? This action cannot be undone.`,
+      destructive: true,
+      testID: 'confirm-clear-all-conversions',
+      onConfirm: async () => {
+        try {
+          let deletedCount = 0;
+          for (const conversion of productConversions) {
+            await deleteProductConversion(conversion.id);
+            deletedCount++;
+          }
+          Alert.alert('Success', `Deleted ${deletedCount} product conversions.`);
+        } catch (error) {
+          console.error('Clear all error:', error);
+          Alert.alert('Error', 'Failed to delete some conversions.');
+        }
+      },
+    });
+  };
+
   const handleExportConversions = async () => {
     if (productConversions.length === 0) {
       Alert.alert('No Data', 'There are no product conversions to export.');
@@ -315,6 +342,14 @@ export default function ProductConversionsScreen() {
           }
           
           console.log('[JSON IMPORT] Total conversions parsed:', parsedConversions.length);
+          console.log('[JSON IMPORT] Converting to Excel and downloading...');
+          
+          try {
+            await exportConversionsToExcel(parsedConversions, products);
+            console.log('[JSON IMPORT] Excel export completed');
+          } catch (exportErr) {
+            console.error('[JSON IMPORT] Excel export error:', exportErr);
+          }
         } catch (err) {
           console.error('[JSON IMPORT] Parse error:', err);
           parseErrors.push(`Failed to parse JSON file: ${err instanceof Error ? err.message : 'Unknown error'}`);
@@ -415,6 +450,16 @@ export default function ProductConversionsScreen() {
                 <Text style={[styles.buttonText, styles.secondaryButtonText]}>Import</Text>
               </TouchableOpacity>
             </View>
+
+            {productConversions.length > 0 && (
+              <TouchableOpacity
+                style={[styles.button, styles.dangerButton]}
+                onPress={handleClearAllConversions}
+              >
+                <Trash size={18} color={Colors.light.card} />
+                <Text style={styles.buttonText}>Clear All Conversions</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {productConversions.length === 0 ? (
@@ -733,6 +778,9 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.light.card,
     borderWidth: 1,
     borderColor: Colors.light.border,
+  },
+  dangerButton: {
+    backgroundColor: Colors.light.danger,
   },
   buttonText: {
     fontSize: 16,
