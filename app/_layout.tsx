@@ -19,7 +19,7 @@ import { ActivityLogProvider, useActivityLog } from '@/contexts/ActivityLogConte
 import { MoirProvider } from '@/contexts/MoirContext';
 import { UpdatePrompt } from '@/components/UpdatePrompt';
 import { InitialSyncTrigger } from '@/components/InitialSyncTrigger';
-
+import { getApiBaseUrl } from '@/utils/apiBaseUrl';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -95,20 +95,12 @@ export default function RootLayout() {
   }));
 
   const [trpcClient] = useState(() => {
-    const getBaseUrl = () => {
-      if (process.env.EXPO_PUBLIC_RORK_API_BASE_URL) {
-        return process.env.EXPO_PUBLIC_RORK_API_BASE_URL;
-      }
-      if (typeof window !== 'undefined') {
-        return window.location.origin;
-      }
-      return 'http://localhost:8081';
-    };
+    const baseUrl = getApiBaseUrl();
 
     return trpc.createClient({
       links: [
         httpLink({
-          url: `${getBaseUrl()}/api/trpc`,
+          url: `${baseUrl}/api/trpc`,
           transformer: superjson,
         }),
       ],
