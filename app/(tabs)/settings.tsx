@@ -17,10 +17,9 @@ import { useOrders } from '@/contexts/OrderContext';
 import { useStores } from '@/contexts/StoresContext';
 import { useProduction } from '@/contexts/ProductionContext';
 import { trpcClient } from '@/lib/trpc';
-import { syncData, overrideSyncData } from '@/utils/syncManager';
+import { syncWithServer } from '@/utils/trpcSyncManager';
 import { useRecipes } from '@/contexts/RecipeContext';
 import { useProductUsage } from '@/contexts/ProductUsageContext';
-import { exportBinIds, importBinIds } from '@/utils/syncManager';
 import { exportUsersToExcel, parseUsersExcel } from '@/utils/usersExporter';
 import { exportOutletsToExcel, parseOutletsExcel } from '@/utils/outletsExporter';
 import { Outlet, Product, ProductType, UserRole, ProductConversion } from '@/types';
@@ -159,7 +158,7 @@ export default function SettingsScreen() {
       
       if (currentUser) {
         try {
-          await syncData('campaign_settings', [settings], currentUser.id);
+          await syncWithServer('campaign_settings', [settings]);
           setConnectionStatus({ type: 'success', message: 'Settings saved and synced successfully' });
         } catch (syncError) {
           console.error('Failed to sync campaign settings:', syncError);
@@ -467,7 +466,7 @@ export default function SettingsScreen() {
                       try {
                         setSyncProgress(`Over-riding ${key}... (${i + 1}/${dataToOverride.length})`);
                         console.log(`[OVERRIDE] Over-riding ${key} with ${data.length} items...`);
-                        await overrideSyncData(key, data as any, currentUser.id);
+                        await syncWithServer(key, data as any, { forceDownload: false });
                         successCount++;
                         console.log(`[OVERRIDE] ✓ ${key} over-ride complete`);
                         await new Promise(resolve => setTimeout(resolve, 200));
