@@ -278,7 +278,9 @@ export default function ProductConversionsScreen() {
           console.log('[JSON IMPORT] Parsed JSON data:', jsonData);
           console.log('[JSON IMPORT] Is array:', Array.isArray(jsonData));
           
-          const conversionsArray = Array.isArray(jsonData) ? jsonData : [];
+          const conversionsArray = Array.isArray(jsonData) 
+            ? jsonData 
+            : (jsonData.conversions && Array.isArray(jsonData.conversions) ? jsonData.conversions : []);
           console.log('[JSON IMPORT] Conversions array length:', conversionsArray.length);
           
           for (let i = 0; i < conversionsArray.length; i++) {
