@@ -166,25 +166,27 @@ export function StockProvider({ children, currentUser }: { children: ReactNode; 
   }, [products]);
 
   const addProduct = useCallback(async (product: Product) => {
-    const updated = [...products, product];
+    const productWithTimestamp = { ...product, updatedAt: Date.now() };
+    const updated = [...products, productWithTimestamp];
     await AsyncStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(updated));
     setProducts(updated);
   }, [products]);
 
   const updateProduct = useCallback(async (productId: string, updates: Partial<Product>) => {
-    const updated = products.map(p => p.id === productId ? { ...p, ...updates } : p);
+    const updated = products.map(p => p.id === productId ? { ...p, ...updates, updatedAt: Date.now() } : p);
     await AsyncStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(updated));
     setProducts(updated);
   }, [products]);
 
   const deleteProduct = useCallback(async (productId: string) => {
-    const updated = products.filter(p => p.id !== productId);
+    const updated = products.map(p => p.id === productId ? { ...p, deleted: true, updatedAt: Date.now() } : p);
     await AsyncStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(updated));
-    setProducts(updated);
+    setProducts(updated.filter(p => !p.deleted));
   }, [products]);
 
   const saveStockCheck = useCallback(async (stockCheck: StockCheck, skipInventoryUpdate?: boolean) => {
-    const updated = [...stockChecks, stockCheck];
+    const checkWithTimestamp = { ...stockCheck, updatedAt: Date.now() };
+    const updated = [...stockChecks, checkWithTimestamp];
     await AsyncStorage.setItem(STORAGE_KEYS.STOCK_CHECKS, JSON.stringify(updated));
     setStockChecks(updated);
   }, [stockChecks]);
@@ -196,19 +198,20 @@ export function StockProvider({ children, currentUser }: { children: ReactNode; 
   }, [stockChecks]);
 
   const updateStockCheck = useCallback(async (checkId: string, newCounts: StockCount[], newOutlet?: string, outletChanged?: boolean) => {
-    const updated = stockChecks.map(c => c.id === checkId ? { ...c, counts: newCounts, outlet: newOutlet || c.outlet } : c);
+    const updated = stockChecks.map(c => c.id === checkId ? { ...c, counts: newCounts, outlet: newOutlet || c.outlet, updatedAt: Date.now() } : c);
     await AsyncStorage.setItem(STORAGE_KEYS.STOCK_CHECKS, JSON.stringify(updated));
     setStockChecks(updated);
   }, [stockChecks]);
 
   const addRequest = useCallback(async (request: ProductRequest) => {
-    const updated = [...requests, request];
+    const requestWithTimestamp = { ...request, updatedAt: Date.now() };
+    const updated = [...requests, requestWithTimestamp];
     await AsyncStorage.setItem(STORAGE_KEYS.REQUESTS, JSON.stringify(updated));
     setRequests(updated);
   }, [requests]);
 
   const updateRequestStatus = useCallback(async (requestId: string, status: ProductRequest['status']) => {
-    const updated = requests.map(r => r.id === requestId ? { ...r, status } : r);
+    const updated = requests.map(r => r.id === requestId ? { ...r, status, updatedAt: Date.now() } : r);
     await AsyncStorage.setItem(STORAGE_KEYS.REQUESTS, JSON.stringify(updated));
     setRequests(updated);
   }, [requests]);
@@ -220,7 +223,7 @@ export function StockProvider({ children, currentUser }: { children: ReactNode; 
   }, [requests]);
 
   const updateRequest = useCallback(async (requestId: string, updates: Partial<ProductRequest>) => {
-    const updated = requests.map(r => r.id === requestId ? { ...r, ...updates } : r);
+    const updated = requests.map(r => r.id === requestId ? { ...r, ...updates, updatedAt: Date.now() } : r);
     await AsyncStorage.setItem(STORAGE_KEYS.REQUESTS, JSON.stringify(updated));
     setRequests(updated);
   }, [requests]);
@@ -232,13 +235,14 @@ export function StockProvider({ children, currentUser }: { children: ReactNode; 
   }, [requests]);
 
   const addOutlet = useCallback(async (outlet: Outlet) => {
-    const updated = [...outlets, outlet];
+    const outletWithTimestamp = { ...outlet, updatedAt: Date.now() };
+    const updated = [...outlets, outletWithTimestamp];
     await AsyncStorage.setItem(STORAGE_KEYS.OUTLETS, JSON.stringify(updated));
     setOutlets(updated);
   }, [outlets]);
 
   const updateOutlet = useCallback(async (outletId: string, updates: Partial<Outlet>) => {
-    const updated = outlets.map(o => o.id === outletId ? { ...o, ...updates } : o);
+    const updated = outlets.map(o => o.id === outletId ? { ...o, ...updates, updatedAt: Date.now() } : o);
     await AsyncStorage.setItem(STORAGE_KEYS.OUTLETS, JSON.stringify(updated));
     setOutlets(updated);
   }, [outlets]);
@@ -250,7 +254,8 @@ export function StockProvider({ children, currentUser }: { children: ReactNode; 
   }, [outlets]);
 
   const addProductConversion = useCallback(async (conversion: ProductConversion) => {
-    const updated = [...productConversions, conversion];
+    const conversionWithTimestamp = { ...conversion, updatedAt: Date.now() };
+    const updated = [...productConversions, conversionWithTimestamp];
     await AsyncStorage.setItem(STORAGE_KEYS.PRODUCT_CONVERSIONS, JSON.stringify(updated));
     setProductConversions(updated);
   }, [productConversions]);
@@ -268,7 +273,7 @@ export function StockProvider({ children, currentUser }: { children: ReactNode; 
   }, [productConversions]);
 
   const updateProductConversion = useCallback(async (conversionId: string, updates: Partial<ProductConversion>) => {
-    const updated = productConversions.map(c => c.id === conversionId ? { ...c, ...updates } : c);
+    const updated = productConversions.map(c => c.id === conversionId ? { ...c, ...updates, updatedAt: Date.now() } : c);
     await AsyncStorage.setItem(STORAGE_KEYS.PRODUCT_CONVERSIONS, JSON.stringify(updated));
     setProductConversions(updated);
   }, [productConversions]);
@@ -297,13 +302,14 @@ export function StockProvider({ children, currentUser }: { children: ReactNode; 
   }, [productConversions]);
 
   const updateInventoryStock = useCallback(async (productId: string, updates: Partial<InventoryStock>) => {
-    const updated = inventoryStocks.map(s => s.productId === productId ? { ...s, ...updates } : s);
+    const updated = inventoryStocks.map(s => s.productId === productId ? { ...s, ...updates, updatedAt: Date.now() } : s);
     await AsyncStorage.setItem(STORAGE_KEYS.INVENTORY_STOCKS, JSON.stringify(updated));
     setInventoryStocks(updated);
   }, [inventoryStocks]);
 
   const addInventoryStock = useCallback(async (stock: InventoryStock) => {
-    const updated = [...inventoryStocks, stock];
+    const stockWithTimestamp = { ...stock, updatedAt: Date.now() };
+    const updated = [...inventoryStocks, stockWithTimestamp];
     await AsyncStorage.setItem(STORAGE_KEYS.INVENTORY_STOCKS, JSON.stringify(updated));
     setInventoryStocks(updated);
   }, [inventoryStocks]);
@@ -597,5 +603,9 @@ export function StockProvider({ children, currentUser }: { children: ReactNode; 
     syncAll,
   ]);
 
-  return <StockContext.Provider value={value}>{children}</StockContext.Provider>;
+  return (
+    <StockContext.Provider value={value}>
+      {children}
+    </StockContext.Provider>
+  );
 }

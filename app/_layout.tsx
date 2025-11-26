@@ -1,7 +1,11 @@
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { trpc } from '@/lib/trpc';
+import { httpLink } from '@trpc/client';
+import superjson from 'superjson';
 import { StockProvider, useStock } from '@/contexts/StockContext';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 
@@ -81,29 +85,63 @@ function AppProviders({ children }: { children: React.ReactNode }) {
 }
 
 export default function RootLayout() {
+  const [queryClient] = useState(() => new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: 1,
+        staleTime: 5000,
+      },
+    },
+  }));
+
+  const [trpcClient] = useState(() => {
+    const getBaseUrl = () => {
+      if (process.env.EXPO_PUBLIC_RORK_API_BASE_URL) {
+        return process.env.EXPO_PUBLIC_RORK_API_BASE_URL;
+      }
+      if (typeof window !== 'undefined') {
+        return window.location.origin;
+      }
+      return 'http://localhost:8081';
+    };
+
+    return trpc.createClient({
+      links: [
+        httpLink({
+          url: `${getBaseUrl()}/api/trpc`,
+          transformer: superjson,
+        }),
+      ],
+    });
+  });
+
   useEffect(() => {
     SplashScreen.hideAsync();
   }, []);
 
   return (
-    <AuthProvider>
-      <GestureHandlerRootView style={{ flex: 1 }}>
-        <MoirProvider>
-          <StoresProvider>
-            <ProductionProvider>
-              <ActivityLogProvider>
-                <UserSync>
-                  <AppProviders>
-                    <InitialSyncTrigger />
-                    <UpdatePrompt />
-                    <RootLayoutNav />
-                  </AppProviders>
-                </UserSync>
-              </ActivityLogProvider>
-            </ProductionProvider>
-          </StoresProvider>
-        </MoirProvider>
-      </GestureHandlerRootView>
-    </AuthProvider>
+    <trpc.Provider client={trpcClient} queryClient={queryClient}>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <GestureHandlerRootView style={{ flex: 1 }}>
+            <MoirProvider>
+              <StoresProvider>
+                <ProductionProvider>
+                  <ActivityLogProvider>
+                    <UserSync>
+                      <AppProviders>
+                        <InitialSyncTrigger />
+                        <UpdatePrompt />
+                        <RootLayoutNav />
+                      </AppProviders>
+                    </UserSync>
+                  </ActivityLogProvider>
+                </ProductionProvider>
+              </StoresProvider>
+            </MoirProvider>
+          </GestureHandlerRootView>
+        </AuthProvider>
+      </QueryClientProvider>
+    </trpc.Provider>
   );
 }
