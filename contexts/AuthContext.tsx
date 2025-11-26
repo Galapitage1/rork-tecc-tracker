@@ -2,7 +2,7 @@ import createContextHook from '@nkzw/create-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { User, UserRole } from '@/types';
-import { syncWithServer } from '@/utils/trpcSyncManager';
+import { syncData } from '@/utils/syncManager';
 import { performDailyCleanup } from '@/utils/storageCleanup';
 
 const STORAGE_KEYS = {
@@ -171,9 +171,9 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     try {
       if (initialUsersSynced || syncInProgressRef.current) return;
       syncInProgressRef.current = true;
-      const synced = await syncWithServer<User>('users', users);
+      const synced = await syncData('users', users, undefined, { isDefaultAdminDevice: currentUser?.username === 'admin' && currentUser?.role === 'superadmin' });
       await AsyncStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(synced));
-      setUsers(synced.filter(u => !u.deleted));
+      setUsers((synced as any[]).filter(u => !u?.deleted));
       setLastSyncTime(Date.now());
       setInitialUsersSynced(true);
     } catch (error) {
@@ -181,7 +181,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     } finally {
       syncInProgressRef.current = false;
     }
-  }, [initialUsersSynced, users]);
+  }, [initialUsersSynced, users, currentUser]);
 
   useEffect(() => {
     if (!isLoading && !currentUser) {
@@ -224,7 +224,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     }
   }, []);
 
-  const syncUsers = useCallback(async (usersToSync?: User[], silent: boolean = false, forceDownload: boolean = false) => {
+  const syncUsers = useCallback(async (usersToSync?: User[], silent: boolean = false) => {
     if (!currentUser) {
       return;
     }
@@ -236,20 +236,18 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       if (!silent) {
         setIsSyncing(true);
       }
-      console.log('[AuthContext] Starting sync...');
       const dataToSync = usersToSync || users;
-      const synced = await syncWithServer<User>('users', dataToSync, { forceDownload });
+      const synced = await syncData('users', dataToSync, currentUser.id, { isDefaultAdminDevice: currentUser.username === 'admin' && currentUser.role === 'superadmin' });
       await AsyncStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(synced));
-      setUsers(synced.filter(u => !u.deleted));
-      if (currentUser && synced.find(u => u.id === currentUser.id)) {
-        const updatedCurrentUser = synced.find(u => u.id === currentUser.id);
+      setUsers((synced as any[]).filter(u => !u?.deleted));
+      if (currentUser && synced.find((u: User) => u.id === currentUser.id)) {
+        const updatedCurrentUser = synced.find((u: User) => u.id === currentUser.id);
         if (updatedCurrentUser) {
           await AsyncStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(updatedCurrentUser));
           setCurrentUser(updatedCurrentUser);
         }
       }
       setLastSyncTime(Date.now());
-      console.log('[AuthContext] ✓ Sync complete');
     } catch (error) {
       console.error('Sync users failed:', error);
       if (!silent) {
@@ -421,7 +419,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
       if (currentUser?.id) {
         try {
-          await syncWithServer<User>('users', finalUsers);
+          await syncData('users', finalUsers, currentUser.id, { isDefaultAdminDevice: currentUser.username === 'admin' && currentUser.role === 'superadmin' });
         } catch (syncError) {
           console.error('clearAllUsers: Sync failed', syncError);
         }
@@ -458,57 +456,6 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     }
   }, []);
 
-  const importUsers = useCallback(async (newUsers: Omit<User, 'id' | 'createdAt' | 'updatedAt'>[]) => {
-    const existingUsersMap = new Map(
-      users.map(u => [u.username.toLowerCase(), u])
-    );
-    
-    const usersToAdd: User[] = [];
-    let updatedCount = 0;
-    let addedCount = 0;
-    
-    let updatedExistingUsers = [...users];
-    
-    newUsers.forEach(newUser => {
-      const key = newUser.username.toLowerCase();
-      const existingUser = existingUsersMap.get(key);
-      
-      if (existingUser) {
-        console.log(`[AuthContext] Updating existing user: "${newUser.username}" (${existingUser.role} → ${newUser.role})`);
-        updatedExistingUsers = updatedExistingUsers.map(u =>
-          u.id === existingUser.id
-            ? { ...u, role: newUser.role, updatedAt: Date.now() }
-            : u
-        );
-        updatedCount++;
-        return;
-      }
-      
-      const fullUser: User = {
-        id: `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${addedCount}`,
-        ...newUser,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
-      
-      usersToAdd.push(fullUser);
-      addedCount++;
-    });
-    
-    const finalUsers = [...updatedExistingUsers, ...usersToAdd];
-    
-    await AsyncStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(finalUsers));
-    setUsers(finalUsers.filter(u => !u.deleted));
-
-    try {
-      await syncUsers(finalUsers);
-    } catch (e) {
-      console.log('[AuthContext] Import sync failed, will retry later');
-    }
-
-    return { added: addedCount, updated: updatedCount };
-  }, [users, syncUsers]);
-
   return useMemo(() => ({
     currentUser,
     users,
@@ -531,7 +478,6 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     toggleShowPageTabs,
     currency,
     updateCurrency,
-    importUsers,
   }), [
     currentUser,
     users,
@@ -553,6 +499,5 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     toggleShowPageTabs,
     currency,
     updateCurrency,
-    importUsers,
   ]);
 });

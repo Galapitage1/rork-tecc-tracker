@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useContext, ReactNode, useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { Product, Recipe } from '@/types';
-import { syncWithServer } from '@/utils/trpcSyncManager';
+import { syncData } from '@/utils/syncManager';
 
 const STORAGE_KEY = '@stock_app_recipes';
 
@@ -43,7 +43,7 @@ export function RecipeProvider({ children, currentUser, products }: { children: 
               const parsed = JSON.parse(trimmed);
               if (Array.isArray(parsed)) setRecipes(parsed);
             }
-          } catch {
+          } catch (e) {
             console.log('RecipeContext: failed to parse, clearing');
             await AsyncStorage.removeItem(STORAGE_KEY);
           }
@@ -99,12 +99,10 @@ export function RecipeProvider({ children, currentUser, products }: { children: 
       if (!silent) {
         setIsSyncing(true);
       }
-      console.log('[RecipeContext] Starting sync...');
-      const synced = await syncWithServer<Recipe>('recipes', recipes);
+      const synced = await syncData('recipes', recipes, currentUser.id);
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(synced));
-      setRecipes(synced);
+      setRecipes(synced as Recipe[]);
       setLastSyncTime(Date.now());
-      console.log('[RecipeContext] ✓ Sync complete');
     } catch (e) {
       console.error('RecipeContext sync failed:', e);
       if (!silent) {
@@ -126,9 +124,12 @@ export function RecipeProvider({ children, currentUser, products }: { children: 
       }, 60000);
     }
     return () => {
-      if (interval) clearInterval(interval);
+      if (interval) {
+        console.log('RecipeContext: Clearing auto-sync interval');
+        clearInterval(interval);
+      }
     };
-  }, [currentUser, syncRecipes]);
+  }, [currentUser, isSyncing, syncRecipes]);
 
   const value = useMemo(() => ({
     recipes,

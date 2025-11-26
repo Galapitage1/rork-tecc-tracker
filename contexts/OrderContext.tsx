@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, ReactNode, createContext, useContext, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CustomerOrder } from '@/types';
-import { syncWithServer } from '@/utils/trpcSyncManager';
+import { syncData } from '@/utils/syncManager';
 
 const ORDERS_KEY = 'customer_orders';
 
@@ -35,6 +35,7 @@ export function OrderProvider({ children, currentUser }: { children: ReactNode; 
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [lastSyncTime, setLastSyncTime] = useState<number>(0);
+  const syncOrdersRef = useRef<(() => Promise<void>) | null>(null);
   const syncInProgressRef = useRef<boolean>(false);
 
   const loadOrders = useCallback(async () => {
@@ -185,10 +186,9 @@ export function OrderProvider({ children, currentUser }: { children: ReactNode; 
         setIsSyncing(true);
       }
       
-      console.log('[OrderContext] Starting sync...');
       const allOrders = await AsyncStorage.getItem(ORDERS_KEY);
       const ordersToSync: CustomerOrder[] = allOrders ? JSON.parse(allOrders) : [];
-      const synced = await syncWithServer<CustomerOrder>('customer_orders', ordersToSync);
+      const synced = await syncData<CustomerOrder>('customer_orders', ordersToSync, currentUser.id);
       
       await AsyncStorage.setItem(ORDERS_KEY, JSON.stringify(synced));
       
@@ -209,8 +209,13 @@ export function OrderProvider({ children, currentUser }: { children: ReactNode; 
   }, [currentUser]);
 
   useEffect(() => {
+    syncOrdersRef.current = syncOrders;
+  }, [syncOrders]);
+
+  useEffect(() => {
     let interval: ReturnType<typeof setInterval> | undefined;
     if (currentUser) {
+      console.log('OrderContext: Setting up auto-sync interval (60 seconds)');
       interval = setInterval(() => {
         if (!syncInProgressRef.current) {
           syncOrders(true).catch((e) => console.log('Orders auto-sync error', e));
@@ -218,9 +223,12 @@ export function OrderProvider({ children, currentUser }: { children: ReactNode; 
       }, 60000);
     }
     return () => {
-      if (interval) clearInterval(interval);
+      if (interval) {
+        console.log('OrderContext: Clearing auto-sync interval');
+        clearInterval(interval);
+      }
     };
-  }, [currentUser, syncOrders]);
+  }, [currentUser]);
 
   const clearAllOrders = useCallback(async () => {
     try {

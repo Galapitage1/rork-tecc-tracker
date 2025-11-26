@@ -2,7 +2,7 @@ import createContextHook from '@nkzw/create-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { ProductionRequest, ApprovedProduction } from '@/types';
-import { syncWithServer } from '@/utils/trpcSyncManager';
+import { syncData } from '@/utils/syncManager';
 
 const STORAGE_KEYS = {
   PRODUCTION_REQUESTS: '@stock_app_production_requests',
@@ -93,11 +93,23 @@ export const [ProductionProvider, useProduction] = createContextHook(() => {
       const filtered = requestsWithTimestamp.filter(r => !r.deleted);
       console.log(`[ProductionContext] Updated state with ${filtered.length} active requests`);
       setProductionRequests(filtered);
+
+      try {
+        if (currentUser?.id) {
+          console.log('[ProductionContext] Syncing production requests to server...');
+          const synced = await syncData('productionRequests', requestsWithTimestamp, currentUser.id);
+          await AsyncStorage.setItem(STORAGE_KEYS.PRODUCTION_REQUESTS, JSON.stringify(synced));
+          setProductionRequests((synced as any[]).filter(r => !r?.deleted));
+          console.log('[ProductionContext] Sync complete');
+        }
+      } catch (e) {
+        console.log('[ProductionContext] Sync failed, will retry later');
+      }
     } catch (error) {
       console.error('[ProductionContext] Failed to save production requests:', error);
       throw error;
     }
-  }, []);
+  }, [currentUser]);
 
   const saveApprovedProductions = useCallback(async (approvals: ApprovedProduction[]) => {
     try {
@@ -110,11 +122,23 @@ export const [ProductionProvider, useProduction] = createContextHook(() => {
       await AsyncStorage.setItem(STORAGE_KEYS.APPROVED_PRODUCTIONS, JSON.stringify(approvalsWithTimestamp));
       const filtered = approvalsWithTimestamp.filter(a => !a.deleted);
       setApprovedProductions(filtered);
+
+      try {
+        if (currentUser?.id) {
+          console.log('[ProductionContext] Syncing approved productions to server...');
+          const synced = await syncData('approvedProductions', approvalsWithTimestamp, currentUser.id);
+          await AsyncStorage.setItem(STORAGE_KEYS.APPROVED_PRODUCTIONS, JSON.stringify(synced));
+          setApprovedProductions((synced as any[]).filter(a => !a?.deleted));
+          console.log('[ProductionContext] Sync complete');
+        }
+      } catch (e) {
+        console.log('[ProductionContext] Sync failed, will retry later');
+      }
     } catch (error) {
       console.error('[ProductionContext] Failed to save approved productions:', error);
       throw error;
     }
-  }, []);
+  }, [currentUser]);
 
   const addProductionRequest = useCallback(async (request: ProductionRequest) => {
     console.log('[ProductionContext] Adding production request:', request.date);
@@ -161,23 +185,21 @@ export const [ProductionProvider, useProduction] = createContextHook(() => {
         setIsSyncing(true);
       }
       
-      console.log('[ProductionContext] Starting sync...');
       const [syncedRequests, syncedApprovals] = await Promise.all([
-        syncWithServer<ProductionRequest>('production_requests', productionRequests),
-        syncWithServer<ApprovedProduction>('approved_productions', approvedProductions),
+        syncData('productionRequests', productionRequests, currentUser.id),
+        syncData('approvedProductions', approvedProductions, currentUser.id),
       ]);
 
       await AsyncStorage.setItem(STORAGE_KEYS.PRODUCTION_REQUESTS, JSON.stringify(syncedRequests));
       await AsyncStorage.setItem(STORAGE_KEYS.APPROVED_PRODUCTIONS, JSON.stringify(syncedApprovals));
 
-      const filteredRequests = syncedRequests.filter(r => !r.deleted);
-      const filteredApprovals = syncedApprovals.filter(a => !a.deleted);
+      const filteredRequests = (syncedRequests as any[]).filter(r => !r?.deleted);
+      const filteredApprovals = (syncedApprovals as any[]).filter(a => !a?.deleted);
       
       setProductionRequests(filteredRequests);
       setApprovedProductions(filteredApprovals);
       
       setLastSyncTime(Date.now());
-      console.log('[ProductionContext] ✓ Sync complete');
     } catch (error) {
       console.error('[ProductionContext] syncAll: Failed:', error);
       if (!silent) {

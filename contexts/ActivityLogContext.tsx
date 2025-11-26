@@ -2,7 +2,7 @@ import createContextHook from '@nkzw/create-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { ActivityLog, ActivityType } from '@/types';
-import { syncWithServer } from '@/utils/trpcSyncManager';
+import { syncData } from '@/utils/syncManager';
 
 const STORAGE_KEY = '@stock_app_activity_logs';
 
@@ -70,10 +70,23 @@ export const [ActivityLogProvider, useActivityLog] = createContextHook(() => {
           throw storageError;
         }
       }
+
+      try {
+        if (currentUser?.id) {
+          const synced = await syncData('activityLogs', trimmedLogs, currentUser.id);
+          const trimmedSynced = Array.isArray(synced) && synced.length > MAX_LOGS
+            ? synced.slice(-MAX_LOGS)
+            : synced;
+          await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(trimmedSynced));
+          setLogs((trimmedSynced as any[]).filter(l => !l?.deleted));
+        }
+      } catch (e) {
+        console.log('[ActivityLogContext] Sync failed, will retry later');
+      }
     } catch (error) {
       console.error('[ActivityLogContext] Failed to save logs:', error);
     }
-  }, []);
+  }, [currentUser]);
 
   const logActivity = useCallback(async (
     type: ActivityType,
@@ -142,11 +155,9 @@ export const [ActivityLogProvider, useActivityLog] = createContextHook(() => {
       if (!silent) {
         setIsSyncing(true);
       }
-      console.log('[ActivityLogContext] Starting sync...');
-      const synced = await syncWithServer<ActivityLog>('activity_logs', logs);
+      const synced = await syncData('activityLogs', logs, currentUser.id);
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(synced));
-      setLogs(synced.filter(l => !l.deleted));
-      console.log('[ActivityLogContext] ✓ Sync complete');
+      setLogs((synced as any[]).filter(l => !l?.deleted));
     } catch (error) {
       console.error('[ActivityLogContext] syncLogs: Failed:', error);
       if (!silent) {

@@ -2,7 +2,7 @@ import createContextHook from '@nkzw/create-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { StoreProduct, Supplier, GRN } from '@/types';
-import { syncWithServer } from '@/utils/trpcSyncManager';
+import { syncData } from '@/utils/syncManager';
 
 const STORAGE_KEYS = {
   STORE_PRODUCTS: '@stock_app_store_products',
@@ -107,11 +107,23 @@ export const [StoresProvider, useStores] = createContextHook(() => {
       const filtered = productsWithTimestamp.filter(p => !p.deleted);
       console.log(`[StoresContext] Updated state with ${filtered.length} active products`);
       setStoreProducts(filtered);
+
+      try {
+        if (currentUser?.id) {
+          console.log('[StoresContext] Syncing products to server...');
+          const synced = await syncData('storeProducts', productsWithTimestamp, currentUser.id, { isDefaultAdminDevice: currentUser.username === 'admin' && currentUser.role === 'superadmin' });
+          await AsyncStorage.setItem(STORAGE_KEYS.STORE_PRODUCTS, JSON.stringify(synced));
+          setStoreProducts((synced as any[]).filter(p => !p?.deleted));
+          console.log('[StoresContext] Sync complete');
+        }
+      } catch (e) {
+        console.log('[StoresContext] Sync failed, will retry later');
+      }
     } catch (error) {
       console.error('[StoresContext] Failed to save store products:', error);
       throw error;
     }
-  }, []);
+  }, [currentUser]);
 
   const addStoreProduct = useCallback(async (product: StoreProduct) => {
     console.log('[StoresContext] Adding store product:', product.name);
@@ -190,11 +202,21 @@ export const [StoresProvider, useStores] = createContextHook(() => {
       }));
       await AsyncStorage.setItem(STORAGE_KEYS.SUPPLIERS, JSON.stringify(suppliersWithTimestamp));
       setSuppliers(suppliersWithTimestamp.filter(s => !s.deleted));
+
+      try {
+        if (currentUser?.id) {
+          const synced = await syncData('suppliers', suppliersWithTimestamp, currentUser.id, { isDefaultAdminDevice: currentUser.username === 'admin' && currentUser.role === 'superadmin' });
+          await AsyncStorage.setItem(STORAGE_KEYS.SUPPLIERS, JSON.stringify(synced));
+          setSuppliers((synced as any[]).filter(s => !s?.deleted));
+        }
+      } catch (e) {
+        console.log('[StoresContext] Suppliers sync failed, will retry later');
+      }
     } catch (error) {
       console.error('[StoresContext] Failed to save suppliers:', error);
       throw error;
     }
-  }, []);
+  }, [currentUser]);
 
   const addSupplier = useCallback(async (supplier: Supplier) => {
     const updatedSuppliers = [...suppliers, supplier];
@@ -256,11 +278,21 @@ export const [StoresProvider, useStores] = createContextHook(() => {
       }));
       await AsyncStorage.setItem(STORAGE_KEYS.GRNS, JSON.stringify(grnsWithTimestamp));
       setGRNs(grnsWithTimestamp.filter(g => !g.deleted));
+
+      try {
+        if (currentUser?.id) {
+          const synced = await syncData('grns', grnsWithTimestamp, currentUser.id);
+          await AsyncStorage.setItem(STORAGE_KEYS.GRNS, JSON.stringify(synced));
+          setGRNs((synced as any[]).filter(g => !g?.deleted));
+        }
+      } catch (e) {
+        console.log('[StoresContext] GRNs sync failed, will retry later');
+      }
     } catch (error) {
       console.error('[StoresContext] Failed to save GRNs:', error);
       throw error;
     }
-  }, []);
+  }, [currentUser]);
 
   const addGRN = useCallback(async (grn: GRN) => {
     const updatedGRNs = [...grns, grn];
@@ -312,25 +344,23 @@ export const [StoresProvider, useStores] = createContextHook(() => {
         setIsSyncing(true);
       }
       
-      console.log('[StoresContext] Starting sync...');
       const [syncedStoreProducts, syncedSuppliers, syncedGRNs] = await Promise.all([
-        syncWithServer<StoreProduct>('store_products', storeProducts),
-        syncWithServer<Supplier>('suppliers', suppliers),
-        syncWithServer<GRN>('grns', grns),
+        syncData('storeProducts', storeProducts, currentUser.id, { isDefaultAdminDevice: currentUser.username === 'admin' && currentUser.role === 'superadmin' }),
+        syncData('suppliers', suppliers, currentUser.id, { isDefaultAdminDevice: currentUser.username === 'admin' && currentUser.role === 'superadmin' }),
+        syncData('grns', grns, currentUser.id),
       ]);
 
       await AsyncStorage.setItem(STORAGE_KEYS.STORE_PRODUCTS, JSON.stringify(syncedStoreProducts));
       await AsyncStorage.setItem(STORAGE_KEYS.SUPPLIERS, JSON.stringify(syncedSuppliers));
       await AsyncStorage.setItem(STORAGE_KEYS.GRNS, JSON.stringify(syncedGRNs));
 
-      const filteredProducts = syncedStoreProducts.filter(p => !p.deleted);
+      const filteredProducts = (syncedStoreProducts as any[]).filter(p => !p?.deleted);
       
       setStoreProducts(filteredProducts);
-      setSuppliers(syncedSuppliers.filter(s => !s.deleted));
-      setGRNs(syncedGRNs.filter(g => !g.deleted));
+      setSuppliers((syncedSuppliers as any[]).filter(s => !s?.deleted));
+      setGRNs((syncedGRNs as any[]).filter(g => !g?.deleted));
       
       setLastSyncTime(Date.now());
-      console.log('[StoresContext] ✓ Sync complete');
     } catch (error) {
       console.error('[StoresContext] syncAll: Failed:', error);
       if (!silent) {
