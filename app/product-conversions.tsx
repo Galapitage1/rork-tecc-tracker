@@ -269,13 +269,25 @@ export default function ProductConversionsScreen() {
       let parseErrors: string[] = [];
 
       if (fileType === 'json') {
+        console.log('[JSON IMPORT] Starting JSON import...');
         try {
-          const jsonData = JSON.parse(fileContent);
-          const conversionsArray = Array.isArray(jsonData) ? jsonData : [];
+          console.log('[JSON IMPORT] File content length:', fileContent.length);
+          console.log('[JSON IMPORT] First 200 chars:', fileContent.substring(0, 200));
           
-          for (const item of conversionsArray) {
+          const jsonData = JSON.parse(fileContent);
+          console.log('[JSON IMPORT] Parsed JSON data:', jsonData);
+          console.log('[JSON IMPORT] Is array:', Array.isArray(jsonData));
+          
+          const conversionsArray = Array.isArray(jsonData) ? jsonData : [];
+          console.log('[JSON IMPORT] Conversions array length:', conversionsArray.length);
+          
+          for (let i = 0; i < conversionsArray.length; i++) {
+            const item = conversionsArray[i];
+            console.log(`[JSON IMPORT] Processing item ${i + 1}:`, item);
+            
             if (!item.fromProductId || !item.toProductId || !item.conversionFactor) {
-              parseErrors.push(`Invalid conversion: missing required fields`);
+              console.log(`[JSON IMPORT] Item ${i + 1} missing required fields`);
+              parseErrors.push(`Invalid conversion at index ${i + 1}: missing required fields`);
               continue;
             }
 
@@ -284,6 +296,7 @@ export default function ProductConversionsScreen() {
             );
 
             if (existingConversion) {
+              console.log(`[JSON IMPORT] Item ${i + 1} already exists, skipping`);
               continue;
             }
 
@@ -295,9 +308,13 @@ export default function ProductConversionsScreen() {
               createdAt: item.createdAt || Date.now(),
             };
 
+            console.log(`[JSON IMPORT] Adding conversion ${i + 1}:`, newConversion);
             parsedConversions.push(newConversion);
           }
+          
+          console.log('[JSON IMPORT] Total conversions parsed:', parsedConversions.length);
         } catch (err) {
+          console.error('[JSON IMPORT] Parse error:', err);
           parseErrors.push(`Failed to parse JSON file: ${err instanceof Error ? err.message : 'Unknown error'}`);
         }
       } else {
@@ -320,11 +337,18 @@ export default function ProductConversionsScreen() {
         return;
       }
 
+      console.log('[IMPORT] About to add conversions to context...');
+      console.log('[IMPORT] Parsed conversions:', parsedConversions);
+      
       try {
-        for (const conversion of parsedConversions) {
+        for (let i = 0; i < parsedConversions.length; i++) {
+          const conversion = parsedConversions[i];
+          console.log(`[IMPORT] Adding conversion ${i + 1}/${parsedConversions.length}:`, conversion);
           await addProductConversion(conversion);
         }
 
+        console.log('[IMPORT] All conversions added successfully');
+        
         let message = `Import complete:\n• Imported: ${parsedConversions.length}`;
         if (parseErrors.length > 0) {
           message += `\n• Warnings: ${parseErrors.length}`;
@@ -332,7 +356,7 @@ export default function ProductConversionsScreen() {
 
         Alert.alert('Import Complete', message);
       } catch (error) {
-        console.error('Error adding conversions:', error);
+        console.error('[IMPORT] Error adding conversions:', error);
         Alert.alert('Error', `Failed to import conversions: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
     } catch (error) {

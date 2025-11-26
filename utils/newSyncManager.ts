@@ -1,6 +1,26 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const FILE_SYNC_BASE = (typeof window !== 'undefined' ? ((window as any).EXPO_PUBLIC_FILE_SYNC_URL || (window as any).EXPO_FILE_SYNC_URL) : undefined) || process.env.EXPO_PUBLIC_FILE_SYNC_URL || '';
+function getFileSyncBase(): string {
+  let base = '';
+  
+  if (typeof window !== 'undefined') {
+    base = (window as any).EXPO_PUBLIC_FILE_SYNC_URL || (window as any).EXPO_FILE_SYNC_URL || '';
+    console.log('[SYNC] Window FILE_SYNC_URL:', base);
+  }
+  
+  if (!base && process.env.EXPO_PUBLIC_FILE_SYNC_URL) {
+    base = process.env.EXPO_PUBLIC_FILE_SYNC_URL;
+    console.log('[SYNC] Process.env FILE_SYNC_URL:', base);
+  }
+  
+  if (!base) {
+    console.warn('[SYNC] No FILE_SYNC_URL configured!');
+  } else {
+    console.log('[SYNC] Using FILE_SYNC_URL:', base);
+  }
+  
+  return base;
+}
 
 export const DEVICE_ID_KEY = '@device_id';
 const LAST_SYNC_KEY = '@last_sync_time';
@@ -34,10 +54,12 @@ export async function syncOut<T extends { id: string; updatedAt?: number }>(
   endpoint: string,
   localData: T[]
 ): Promise<void> {
+  const syncBase = getFileSyncBase();
   console.log(`[SYNC OUT] ${endpoint}: Pushing ${localData.length} items to server...`);
+  console.log(`[SYNC OUT] ${endpoint}: Sync URL:`, syncBase);
   
-  if (!FILE_SYNC_BASE) {
-    console.log(`[SYNC OUT] ${endpoint}: No sync URL configured`);
+  if (!syncBase) {
+    console.warn(`[SYNC OUT] ${endpoint}: No sync URL configured`);
     return;
   }
 
@@ -50,7 +72,7 @@ export async function syncOut<T extends { id: string; updatedAt?: number }>(
     }));
     const cleaned = cleanDataForSync(dataWithMetadata);
 
-    const syncUrl = FILE_SYNC_BASE.replace(/\/$/, '') + `/sync.php?endpoint=${encodeURIComponent(endpoint)}`;
+    const syncUrl = syncBase.replace(/\/$/, '') + `/sync.php?endpoint=${encodeURIComponent(endpoint)}`;
     const res = await fetch(syncUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -73,15 +95,17 @@ export async function syncIn<T extends { id: string; updatedAt?: number }>(
   endpoint: string,
   onlyNewer: boolean = false
 ): Promise<T[] | null> {
+  const syncBase = getFileSyncBase();
   console.log(`[SYNC IN] ${endpoint}: Fetching from server... (onlyNewer: ${onlyNewer})`);
+  console.log(`[SYNC IN] ${endpoint}: Sync URL:`, syncBase);
   
-  if (!FILE_SYNC_BASE) {
-    console.log(`[SYNC IN] ${endpoint}: No sync URL configured`);
+  if (!syncBase) {
+    console.warn(`[SYNC IN] ${endpoint}: No sync URL configured`);
     return null;
   }
 
   try {
-    const url = FILE_SYNC_BASE.replace(/\/$/, '') + `/get.php?endpoint=${encodeURIComponent(endpoint)}`;
+    const url = syncBase.replace(/\/$/, '') + `/get.php?endpoint=${encodeURIComponent(endpoint)}`;
     const res = await fetch(url);
     
     if (!res.ok) {
