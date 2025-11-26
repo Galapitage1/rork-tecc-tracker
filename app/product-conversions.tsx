@@ -15,7 +15,7 @@ import * as FileSystem from 'expo-file-system';
 export default function ProductConversionsScreen() {
   const router = useRouter();
   const { isAdmin, isSuperAdmin } = useAuth();
-  const { products, productConversions, addProductConversion, updateProductConversion, deleteProductConversion } = useStock();
+  const { products, productConversions, addProductConversion, importProductConversions, updateProductConversion, deleteProductConversion } = useStock();
   const [showConversionModal, setShowConversionModal] = useState<boolean>(false);
   const [editingConversion, setEditingConversion] = useState<ProductConversion | null>(null);
   const [conversionFromProductId, setConversionFromProductId] = useState<string>('');
@@ -339,26 +339,24 @@ export default function ProductConversionsScreen() {
         return;
       }
 
-      console.log('[IMPORT] About to add conversions to context...');
+      console.log('[IMPORT] About to bulk import conversions...');
       console.log('[IMPORT] Parsed conversions:', parsedConversions);
       
       try {
-        for (let i = 0; i < parsedConversions.length; i++) {
-          const conversion = parsedConversions[i];
-          console.log(`[IMPORT] Adding conversion ${i + 1}/${parsedConversions.length}:`, conversion);
-          await addProductConversion(conversion);
-        }
-
-        console.log('[IMPORT] All conversions added successfully');
+        const importedCount = await importProductConversions(parsedConversions);
+        console.log('[IMPORT] Bulk import complete, imported', importedCount, 'conversions');
         
-        let message = `Import complete:\n• Imported: ${parsedConversions.length}`;
+        let message = `Import complete:\n• Imported: ${importedCount}`;
+        if (parsedConversions.length - importedCount > 0) {
+          message += `\n• Skipped (already exist): ${parsedConversions.length - importedCount}`;
+        }
         if (parseErrors.length > 0) {
           message += `\n• Warnings: ${parseErrors.length}`;
         }
 
         Alert.alert('Import Complete', message);
       } catch (error) {
-        console.error('[IMPORT] Error adding conversions:', error);
+        console.error('[IMPORT] Error importing conversions:', error);
         Alert.alert('Error', `Failed to import conversions: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
     } catch (error) {

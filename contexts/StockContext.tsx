@@ -50,6 +50,7 @@ type StockContextType = {
   updateOutlet: (outletId: string, updates: Partial<Outlet>) => Promise<void>;
   deleteOutlet: (outletId: string) => Promise<void>;
   addProductConversion: (conversion: ProductConversion) => Promise<void>;
+  importProductConversions: (conversions: ProductConversion[]) => Promise<number>;
   updateProductConversion: (conversionId: string, updates: Partial<ProductConversion>) => Promise<void>;
   deleteProductConversion: (conversionId: string) => Promise<void>;
   getConversionFactor: (fromProductId: string, toProductId: string) => number | null;
@@ -1870,6 +1871,28 @@ export function StockProvider({ children, currentUser }: { children: ReactNode; 
     await saveProductConversions(updatedConversions);
   }, [productConversions, saveProductConversions]);
 
+  const importProductConversions = useCallback(async (conversions: ProductConversion[]): Promise<number> => {
+    console.log('[BULK IMPORT] Starting bulk import of', conversions.length, 'conversions');
+    
+    const existingIds = new Set(productConversions.map(c => `${c.fromProductId}-${c.toProductId}`));
+    const newConversions = conversions.filter(c => {
+      const key = `${c.fromProductId}-${c.toProductId}`;
+      return !existingIds.has(key);
+    });
+    
+    console.log('[BULK IMPORT] Filtered to', newConversions.length, 'new conversions');
+    
+    if (newConversions.length === 0) {
+      return 0;
+    }
+    
+    const updatedConversions = [...productConversions, ...newConversions];
+    await saveProductConversions(updatedConversions);
+    
+    console.log('[BULK IMPORT] Successfully imported', newConversions.length, 'conversions');
+    return newConversions.length;
+  }, [productConversions, saveProductConversions]);
+
   const updateProductConversion = useCallback(async (conversionId: string, updates: Partial<ProductConversion>) => {
     const updatedConversions = productConversions.map(c =>
       c.id === conversionId ? { ...c, ...updates, updatedAt: Date.now() } : c
@@ -3145,6 +3168,7 @@ export function StockProvider({ children, currentUser }: { children: ReactNode; 
     updateOutlet,
     deleteOutlet,
     addProductConversion,
+    importProductConversions,
     updateProductConversion,
     deleteProductConversion,
     getConversionFactor,
@@ -3200,6 +3224,7 @@ export function StockProvider({ children, currentUser }: { children: ReactNode; 
     updateOutlet,
     deleteOutlet,
     addProductConversion,
+    importProductConversions,
     updateProductConversion,
     deleteProductConversion,
     getConversionFactor,
