@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useContext, ReactNode, useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { Product, Recipe } from '@/types';
-import { syncWithServer } from '@/utils/trpcSyncManager';
+import { fullSync } from '@/utils/newSyncManager';
 
 const STORAGE_KEY = '@stock_app_recipes';
 
@@ -99,7 +99,7 @@ export function RecipeProvider({ children, currentUser, products }: { children: 
       if (!silent) {
         setIsSyncing(true);
       }
-      const synced = await syncWithServer<Recipe>('recipes', recipes);
+      const synced = await fullSync<Recipe>('recipes', recipes);
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(synced));
       setRecipes(synced);
       setLastSyncTime(Date.now());

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef, ReactNode, createContext, useContext } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Customer } from '@/types';
-import { syncWithServer } from '@/utils/trpcSyncManager';
+import { fullSync } from '@/utils/newSyncManager';
 
 const CUSTOMERS_KEY = 'customers';
 
@@ -164,7 +164,7 @@ export function CustomerProvider({ children, currentUser }: { children: ReactNod
       }
       const allCustomers = await AsyncStorage.getItem(CUSTOMERS_KEY);
       const customersToSync: Customer[] = allCustomers ? JSON.parse(allCustomers) : customers;
-      const synced = await syncWithServer<Customer>('customers', customersToSync);
+      const synced = await fullSync<Customer>('customers', customersToSync);
       await AsyncStorage.setItem(CUSTOMERS_KEY, JSON.stringify(synced));
       const activeCustomers = synced.filter(customer => customer.deleted !== true);
       setCustomers(activeCustomers);
