@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useState, useEffect, useCallback, useMemo, useRef, ReactNode, createContext, useContext } from 'react';
 import { Product, StockCheck, StockCount, ProductRequest, Outlet, ProductConversion, InventoryStock, SalesDeduction, SalesReconciliationHistory } from '@/types';
-import { syncWithServer } from '@/utils/trpcSyncManager';
+import { instantSync } from '@/utils/syncManager';
 
 const STORAGE_KEYS = {
   PRODUCTS: '@stock_app_products',
@@ -454,15 +454,15 @@ export function StockProvider({ children, currentUser }: { children: ReactNode; 
       syncInProgressRef.current = true;
       if (!silent) setIsSyncing(true);
 
-      console.log('[StockContext] Starting tRPC sync...');
+      console.log('[StockContext] Starting sync...');
 
       const [syncedProducts, syncedStockChecks, syncedRequests, syncedOutlets, syncedConversions, syncedInventory] = await Promise.all([
-        syncWithServer<Product>('products', products),
-        syncWithServer<StockCheck>('stock_checks', stockChecks),
-        syncWithServer<ProductRequest>('requests', requests),
-        syncWithServer<Outlet>('outlets', outlets),
-        syncWithServer<ProductConversion>('product_conversions', productConversions),
-        syncWithServer<InventoryStock>('inventory_stocks', inventoryStocks),
+        instantSync<Product>('products', products, currentUser?.id, { forceDownload }),
+        instantSync<StockCheck>('stock_checks', stockChecks, currentUser?.id, { forceDownload }),
+        instantSync<ProductRequest>('requests', requests, currentUser?.id, { forceDownload }),
+        instantSync<Outlet>('outlets', outlets, currentUser?.id, { forceDownload }),
+        instantSync<ProductConversion>('product_conversions', productConversions, currentUser?.id, { forceDownload }),
+        instantSync<InventoryStock>('inventory_stocks', inventoryStocks, currentUser?.id, { forceDownload }),
       ]);
 
       await Promise.all([
@@ -482,7 +482,7 @@ export function StockProvider({ children, currentUser }: { children: ReactNode; 
       setInventoryStocks(syncedInventory);
       setLastSyncTime(Date.now());
       
-      console.log('[StockContext] ✓ tRPC sync complete');
+      console.log('[StockContext] ✓ Sync complete');
     } catch (error) {
       console.error('StockContext syncAll failed:', error);
       if (!silent) throw error;

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, ReactNode, createContext, useContext, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CustomerOrder } from '@/types';
-import { syncWithServer } from '@/utils/trpcSyncManager';
+import { instantSync } from '@/utils/syncManager';
 
 const ORDERS_KEY = 'customer_orders';
 
@@ -185,10 +185,10 @@ export function OrderProvider({ children, currentUser }: { children: ReactNode; 
         setIsSyncing(true);
       }
       
-      console.log('[OrderContext] Starting tRPC sync...');
+      console.log('[OrderContext] Starting sync...');
       const allOrders = await AsyncStorage.getItem(ORDERS_KEY);
       const ordersToSync: CustomerOrder[] = allOrders ? JSON.parse(allOrders) : [];
-      const synced = await syncWithServer<CustomerOrder>('customer_orders', ordersToSync);
+      const synced = await instantSync<CustomerOrder>('customer_orders', ordersToSync, currentUser.id);
       
       await AsyncStorage.setItem(ORDERS_KEY, JSON.stringify(synced));
       

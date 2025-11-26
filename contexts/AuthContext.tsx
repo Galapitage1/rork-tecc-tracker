@@ -2,7 +2,7 @@ import createContextHook from '@nkzw/create-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { User, UserRole } from '@/types';
-import { syncWithServer } from '@/utils/trpcSyncManager';
+import { instantSync } from '@/utils/syncManager';
 import { performDailyCleanup } from '@/utils/storageCleanup';
 
 const STORAGE_KEYS = {
@@ -171,7 +171,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     try {
       if (initialUsersSynced || syncInProgressRef.current) return;
       syncInProgressRef.current = true;
-      const synced = await syncWithServer<User>('users', users);
+      const synced = await instantSync<User>('users', users, 'auth-system');
       await AsyncStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(synced));
       setUsers(synced.filter(u => !u.deleted));
       setLastSyncTime(Date.now());
@@ -236,9 +236,9 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       if (!silent) {
         setIsSyncing(true);
       }
-      console.log('[AuthContext] Starting tRPC sync...');
+      console.log('[AuthContext] Starting sync...');
       const dataToSync = usersToSync || users;
-      const synced = await syncWithServer<User>('users', dataToSync);
+      const synced = await instantSync<User>('users', dataToSync, 'auth-system', { forceDownload });
       await AsyncStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(synced));
       setUsers(synced.filter(u => !u.deleted));
       if (currentUser && synced.find(u => u.id === currentUser.id)) {
@@ -249,7 +249,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         }
       }
       setLastSyncTime(Date.now());
-      console.log('[AuthContext] ✓ tRPC sync complete');
+      console.log('[AuthContext] ✓ Sync complete');
     } catch (error) {
       console.error('Sync users failed:', error);
       if (!silent) {
@@ -421,7 +421,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
       if (currentUser?.id) {
         try {
-          await syncWithServer<User>('users', finalUsers);
+          await instantSync<User>('users', finalUsers, currentUser.id);
         } catch (syncError) {
           console.error('clearAllUsers: Sync failed', syncError);
         }

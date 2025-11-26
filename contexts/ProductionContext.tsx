@@ -2,7 +2,7 @@ import createContextHook from '@nkzw/create-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { ProductionRequest, ApprovedProduction } from '@/types';
-import { syncWithServer } from '@/utils/trpcSyncManager';
+import { instantSync } from '@/utils/syncManager';
 
 const STORAGE_KEYS = {
   PRODUCTION_REQUESTS: '@stock_app_production_requests',
@@ -161,10 +161,10 @@ export const [ProductionProvider, useProduction] = createContextHook(() => {
         setIsSyncing(true);
       }
       
-      console.log('[ProductionContext] Starting tRPC sync...');
+      console.log('[ProductionContext] Starting sync...');
       const [syncedRequests, syncedApprovals] = await Promise.all([
-        syncWithServer<ProductionRequest>('production_requests', productionRequests),
-        syncWithServer<ApprovedProduction>('approved_productions', approvedProductions),
+        instantSync<ProductionRequest>('production_requests', productionRequests, currentUser.id),
+        instantSync<ApprovedProduction>('approved_productions', approvedProductions, currentUser.id),
       ]);
 
       await AsyncStorage.setItem(STORAGE_KEYS.PRODUCTION_REQUESTS, JSON.stringify(syncedRequests));
@@ -177,7 +177,7 @@ export const [ProductionProvider, useProduction] = createContextHook(() => {
       setApprovedProductions(filteredApprovals);
       
       setLastSyncTime(Date.now());
-      console.log('[ProductionContext] ✓ tRPC sync complete');
+      console.log('[ProductionContext] ✓ Sync complete');
     } catch (error) {
       console.error('[ProductionContext] syncAll: Failed:', error);
       if (!silent) {

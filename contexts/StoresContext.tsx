@@ -2,7 +2,7 @@ import createContextHook from '@nkzw/create-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { StoreProduct, Supplier, GRN } from '@/types';
-import { syncWithServer } from '@/utils/trpcSyncManager';
+import { instantSync } from '@/utils/syncManager';
 
 const STORAGE_KEYS = {
   STORE_PRODUCTS: '@stock_app_store_products',
@@ -312,11 +312,11 @@ export const [StoresProvider, useStores] = createContextHook(() => {
         setIsSyncing(true);
       }
       
-      console.log('[StoresContext] Starting tRPC sync...');
+      console.log('[StoresContext] Starting sync...');
       const [syncedStoreProducts, syncedSuppliers, syncedGRNs] = await Promise.all([
-        syncWithServer<StoreProduct>('store_products', storeProducts),
-        syncWithServer<Supplier>('suppliers', suppliers),
-        syncWithServer<GRN>('grns', grns),
+        instantSync<StoreProduct>('store_products', storeProducts, currentUser.id),
+        instantSync<Supplier>('suppliers', suppliers, currentUser.id),
+        instantSync<GRN>('grns', grns, currentUser.id),
       ]);
 
       await AsyncStorage.setItem(STORAGE_KEYS.STORE_PRODUCTS, JSON.stringify(syncedStoreProducts));
@@ -330,7 +330,7 @@ export const [StoresProvider, useStores] = createContextHook(() => {
       setGRNs(syncedGRNs.filter(g => !g.deleted));
       
       setLastSyncTime(Date.now());
-      console.log('[StoresContext] ✓ tRPC sync complete');
+      console.log('[StoresContext] ✓ Sync complete');
     } catch (error) {
       console.error('[StoresContext] syncAll: Failed:', error);
       if (!silent) {
