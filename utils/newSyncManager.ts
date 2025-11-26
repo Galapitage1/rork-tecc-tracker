@@ -5,7 +5,9 @@ function getFileSyncBase(): string {
   
   if (typeof window !== 'undefined') {
     base = (window as any).EXPO_PUBLIC_FILE_SYNC_URL || (window as any).EXPO_FILE_SYNC_URL || '';
-    console.log('[SYNC] Window FILE_SYNC_URL:', base);
+    if (base) {
+      console.log('[SYNC] Window FILE_SYNC_URL:', base);
+    }
   }
   
   if (!base && process.env.EXPO_PUBLIC_FILE_SYNC_URL) {
@@ -14,9 +16,7 @@ function getFileSyncBase(): string {
   }
   
   if (!base) {
-    console.warn('[SYNC] No FILE_SYNC_URL configured!');
-  } else {
-    console.log('[SYNC] Using FILE_SYNC_URL:', base);
+    console.log('[SYNC] FILE_SYNC_URL not configured - sync will be skipped');
   }
   
   return base;

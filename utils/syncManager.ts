@@ -196,13 +196,7 @@ export async function instantSync<T extends { id: string; updatedAt?: number }>(
   }
 
   if (!SYNC_KEY) {
-    console.warn(`[INSTANT SYNC] ${endpoint}: Neither FILE_SYNC_URL nor JSONBIN key configured`);
-    console.log('[INSTANT SYNC] Current config:', {
-      FILE_SYNC_BASE_VALUE: FILE_SYNC_BASE,
-      SYNC_KEY_SET: !!SYNC_KEY,
-      PROCESS_ENV: process.env.EXPO_PUBLIC_FILE_SYNC_URL ? 'SET' : 'NOT SET',
-      WINDOW_ENV: typeof window !== 'undefined' ? ((window as any).EXPO_PUBLIC_FILE_SYNC_URL ? 'SET' : 'NOT SET') : 'N/A'
-    });
+    console.log(`[INSTANT SYNC] ${endpoint}: JSONBIN not configured - using local data only`);
     return localData;
   }
 
