@@ -43,7 +43,7 @@ export function RecipeProvider({ children, currentUser, products }: { children: 
               const parsed = JSON.parse(trimmed);
               if (Array.isArray(parsed)) setRecipes(parsed);
             }
-          } catch (e) {
+          } catch {
             console.log('RecipeContext: failed to parse, clearing');
             await AsyncStorage.removeItem(STORAGE_KEY);
           }
@@ -124,12 +124,9 @@ export function RecipeProvider({ children, currentUser, products }: { children: 
       }, 60000);
     }
     return () => {
-      if (interval) {
-        console.log('RecipeContext: Clearing auto-sync interval');
-        clearInterval(interval);
-      }
+      if (interval) clearInterval(interval);
     };
-  }, [currentUser, isSyncing, syncRecipes]);
+  }, [currentUser, syncRecipes]);
 
   const value = useMemo(() => ({
     recipes,
