@@ -195,9 +195,10 @@ export default function ProductConversionsScreen() {
       testID: 'confirm-clear-all-conversions',
       onConfirm: async () => {
         try {
+          const conversionIds = productConversions.map(c => c.id);
           let deletedCount = 0;
-          for (const conversion of productConversions) {
-            await deleteProductConversion(conversion.id);
+          for (const conversionId of conversionIds) {
+            await deleteProductConversion(conversionId);
             deletedCount++;
           }
           Alert.alert('Success', `Deleted ${deletedCount} product conversions.`);
