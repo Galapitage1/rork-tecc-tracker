@@ -32,6 +32,48 @@ Click the **"New repository secret"** button for each of these:
 - **Value**: Leave empty unless you're using JSONBin
 - Click **"Add secret"**
 
+### Step 3: Add FTP Deployment Secrets (Optional)
+
+If you want automatic FTP deployment (like FileZilla, but automated), add these secrets:
+
+#### Secret 4: FTP_SERVER
+- **Name**: `FTP_SERVER`
+- **Value**: `sg-shared01-da.pvtwebs.com` (your FTP server hostname)
+- Click **"Add secret"**
+
+#### Secret 5: FTP_USERNAME
+- **Name**: `FTP_USERNAME`
+- **Value**: Your FTP username (same as FileZilla)
+- Click **"Add secret"**
+
+#### Secret 6: FTP_PASSWORD
+- **Name**: `FTP_PASSWORD`
+- **Value**: Your FTP password (same as FileZilla)
+- Click **"Add secret"**
+
+#### Secret 7: FTP_PORT
+- **Name**: `FTP_PORT`
+- **Value**: `21` (or your FTP port)
+- Click **"Add secret"**
+
+#### Secret 8: FTP_SERVER_DIR
+- **Name**: `FTP_SERVER_DIR`
+- **Value**: `/domains/tracker.tecclk.com/public_html/` (your server directory)
+- Click **"Add secret"**
+
+### Step 4: Enable Auto-Deploy (Optional)
+
+To enable automatic FTP deployment on every push:
+
+1. Click the **"Variables"** tab (next to Secrets)
+2. Click **"New repository variable"**
+3. Add:
+   - **Name**: `FTP_AUTO_DEPLOY`
+   - **Value**: `true`
+4. Click **Add variable**
+
+📖 **For complete FTP setup instructions, see [FTP_AUTO_DEPLOY_GUIDE.md](./FTP_AUTO_DEPLOY_GUIDE.md)**
+
 ---
 
 ## 🚀 How to Build with Environment Variables

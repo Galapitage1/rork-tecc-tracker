@@ -4,6 +4,20 @@ on:
   push:
     branches: [ main, master ]
   workflow_dispatch:
+    inputs:
+      deploy_to_ftp:
+        description: 'Deploy to FTP server after build'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+# Limit permissions for security
+permissions:
+  contents: read
+  actions: read
 
 jobs:
   build:
@@ -23,6 +37,9 @@ jobs:
 
     - name: Build web app
       run: npx expo export -p web
+      env:
+        EXPO_PUBLIC_FILE_SYNC_URL: ${{ secrets.EXPO_PUBLIC_FILE_SYNC_URL }}
+        EXPO_PUBLIC_RORK_API_BASE_URL: ${{ secrets.EXPO_PUBLIC_RORK_API_BASE_URL }}
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
@@ -54,3 +71,62 @@ jobs:
         name: deployment-package
         path: tracker-app.zip
         retention-days: 30
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    # Only run if auto-deploy is enabled OR manual deploy requested, and not a PR
+    if: |
+      (vars.FTP_AUTO_DEPLOY == 'true' || github.event.inputs.deploy_to_ftp == 'true') &&
+      github.event_name != 'pull_request'
+    
+    steps:
+    - name: Check FTP secrets are configured
+      run: |
+        if [ -z "${{ secrets.FTP_SERVER }}" ] || [ -z "${{ secrets.FTP_USERNAME }}" ] || [ -z "${{ secrets.FTP_PASSWORD }}" ]; then
+          echo "❌ FTP secrets are not configured. Please add FTP_SERVER, FTP_USERNAME, and FTP_PASSWORD to your repository secrets."
+          echo "See FTP_AUTO_DEPLOY_GUIDE.md for setup instructions."
+          exit 1
+        fi
+        echo "✅ FTP secrets are configured"
+
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: tracker-app-build
+        path: dist/
+
+    - name: Prepare files for FTP upload
+      run: |
+        # Create deploy directory with all files
+        mkdir -p deploy
+        cp -r dist/* deploy/
+        
+        # Copy the Tracker API folders (but not the data directory)
+        mkdir -p deploy/Tracker/api
+        cp -r public/Tracker/api/* deploy/Tracker/api/
+        
+        # Note: We don't include deploy/Tracker/data to preserve server data
+
+    - name: Deploy to FTP server
+      uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+      with:
+        server: ${{ secrets.FTP_SERVER }}
+        username: ${{ secrets.FTP_USERNAME }}
+        password: ${{ secrets.FTP_PASSWORD }}
+        port: ${{ secrets.FTP_PORT || 21 }}
+        local-dir: ./deploy/
+        server-dir: ${{ secrets.FTP_SERVER_DIR || '/' }}
+        exclude: |
+          **/.git*
+          **/.git*/**
+          **/node_modules/**
+        dangerous-clean-slate: false
+
+    - name: Deployment complete
+      run: |
+        echo "✅ Deployment to FTP server completed successfully!"
+        echo "Your app should now be live at your configured domain."
