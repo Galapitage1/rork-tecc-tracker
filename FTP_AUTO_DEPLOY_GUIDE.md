@@ -128,13 +128,15 @@ If using `https://tracker.tecclk.com`:
 The workflow automatically excludes:
 - `.git` folders
 - `node_modules`
-- `Tracker/data/` (preserves your existing data on the server)
 
 ### Preserve Server Data
 
-The deployment uses `dangerous-clean-slate: false` which means:
-- Existing files that aren't in your new build are **kept**
-- Your `Tracker/data/` folder with user data is **preserved**
+The deployment is designed to preserve your existing data:
+- The `Tracker/data/` folder is **not included** in the deployment
+- Existing files on the server that aren't in your new build are **kept** (using `dangerous-clean-slate: false`)
+- Your user data and sync files remain intact between deployments
+
+**Note**: Make sure the `Tracker/data/` directory already exists on your server with proper permissions (777) before your first deployment.
 
 ### Custom Server Directory
 

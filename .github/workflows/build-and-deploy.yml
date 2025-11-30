@@ -70,12 +70,21 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
-    # Only run if FTP secrets are configured AND (auto-deploy is enabled OR manual deploy requested)
+    # Only run if auto-deploy is enabled OR manual deploy requested, and not a PR
     if: |
       (vars.FTP_AUTO_DEPLOY == 'true' || github.event.inputs.deploy_to_ftp == 'true') &&
       github.event_name != 'pull_request'
     
     steps:
+    - name: Check FTP secrets are configured
+      run: |
+        if [ -z "${{ secrets.FTP_SERVER }}" ] || [ -z "${{ secrets.FTP_USERNAME }}" ] || [ -z "${{ secrets.FTP_PASSWORD }}" ]; then
+          echo "❌ FTP secrets are not configured. Please add FTP_SERVER, FTP_USERNAME, and FTP_PASSWORD to your repository secrets."
+          echo "See FTP_AUTO_DEPLOY_GUIDE.md for setup instructions."
+          exit 1
+        fi
+        echo "✅ FTP secrets are configured"
+
     - name: Checkout code
       uses: actions/checkout@v4
 
@@ -91,12 +100,11 @@ jobs:
         mkdir -p deploy
         cp -r dist/* deploy/
         
-        # Copy the Tracker API and data folders
-        mkdir -p deploy/Tracker
-        cp -r public/Tracker/* deploy/Tracker/
+        # Copy the Tracker API folders (but not the data directory)
+        mkdir -p deploy/Tracker/api
+        cp -r public/Tracker/api/* deploy/Tracker/api/
         
-        # Ensure data directory exists
-        mkdir -p deploy/Tracker/data
+        # Note: We don't include deploy/Tracker/data to preserve server data
 
     - name: Deploy to FTP server
       uses: SamKirkland/FTP-Deploy-Action@v4.3.5
@@ -111,7 +119,6 @@ jobs:
           **/.git*
           **/.git*/**
           **/node_modules/**
-          **/Tracker/data/**
         dangerous-clean-slate: false
 
     - name: Deployment complete
