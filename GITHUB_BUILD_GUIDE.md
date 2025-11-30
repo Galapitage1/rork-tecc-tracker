@@ -128,6 +128,17 @@ Once your app is working at https://tracker.tecclk.com, follow these steps to em
 
 No terminal commands needed! 🎉
 
+### 🚀 **Even Easier: Automatic FTP Deployment**
+
+Want to skip steps 4 and 5? Set up automatic FTP deployment so your app deploys itself!
+
+See **[FTP_AUTO_DEPLOY_GUIDE.md](./FTP_AUTO_DEPLOY_GUIDE.md)** for complete instructions.
+
+With auto-deploy enabled:
+1. Make changes to your code
+2. Push to GitHub
+3. **Done!** Your app is live automatically in 3-5 minutes
+
 ---
 
 ## 🆘 **Troubleshooting**
@@ -165,5 +176,6 @@ You've now:
 - ✅ Uploaded to tracker.tecclk.com
 - ✅ Enabled SSL
 - ✅ Can embed in your Wix site
+- ✅ (Optional) Set up automatic FTP deployment
 
 Your app is now live and will sync data across all devices! 🚀

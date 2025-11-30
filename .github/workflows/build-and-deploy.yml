@@ -4,6 +4,15 @@ on:
   push:
     branches: [ main, master ]
   workflow_dispatch:
+    inputs:
+      deploy_to_ftp:
+        description: 'Deploy to FTP server after build'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 jobs:
   build:
@@ -23,6 +32,9 @@ jobs:
 
     - name: Build web app
       run: npx expo export -p web
+      env:
+        EXPO_PUBLIC_FILE_SYNC_URL: ${{ secrets.EXPO_PUBLIC_FILE_SYNC_URL }}
+        EXPO_PUBLIC_RORK_API_BASE_URL: ${{ secrets.EXPO_PUBLIC_RORK_API_BASE_URL }}
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
@@ -54,3 +66,55 @@ jobs:
         name: deployment-package
         path: tracker-app.zip
         retention-days: 30
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    # Only run if FTP secrets are configured AND (auto-deploy is enabled OR manual deploy requested)
+    if: |
+      (vars.FTP_AUTO_DEPLOY == 'true' || github.event.inputs.deploy_to_ftp == 'true') &&
+      github.event_name != 'pull_request'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: tracker-app-build
+        path: dist/
+
+    - name: Prepare files for FTP upload
+      run: |
+        # Create deploy directory with all files
+        mkdir -p deploy
+        cp -r dist/* deploy/
+        
+        # Copy the Tracker API and data folders
+        mkdir -p deploy/Tracker
+        cp -r public/Tracker/* deploy/Tracker/
+        
+        # Ensure data directory exists
+        mkdir -p deploy/Tracker/data
+
+    - name: Deploy to FTP server
+      uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+      with:
+        server: ${{ secrets.FTP_SERVER }}
+        username: ${{ secrets.FTP_USERNAME }}
+        password: ${{ secrets.FTP_PASSWORD }}
+        port: ${{ secrets.FTP_PORT || 21 }}
+        local-dir: ./deploy/
+        server-dir: ${{ secrets.FTP_SERVER_DIR || '/' }}
+        exclude: |
+          **/.git*
+          **/.git*/**
+          **/node_modules/**
+          **/Tracker/data/**
+        dangerous-clean-slate: false
+
+    - name: Deployment complete
+      run: |
+        echo "✅ Deployment to FTP server completed successfully!"
+        echo "Your app should now be live at your configured domain."
